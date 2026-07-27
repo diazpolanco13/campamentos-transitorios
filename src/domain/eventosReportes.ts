@@ -127,7 +127,7 @@ export function eventosArchivados(
 }
 
 /** Mínimo de palabras en el título (evita títulos como «Pelea»). */
-export const MIN_PALABRAS_TITULO_EVENTO = 4;
+export const MIN_PALABRAS_TITULO_EVENTO = 6;
 
 export function contarPalabrasTituloEvento(titulo: string): number {
   return titulo

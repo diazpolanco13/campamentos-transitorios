@@ -23,7 +23,6 @@ import { nuevoId } from "@/data/reposSupabase";
 import {
   CATALOGO_TIPOS_EVENTO_REPORTE,
   META_TIPO_EVENTO_REPORTE,
-  MIN_PALABRAS_TITULO_EVENTO,
   TIPO_EVENTO_REPORTE_DEFAULT,
   eventosArchivados,
   textoParticipantesEvento,
@@ -34,6 +33,8 @@ import {
 } from "@/domain/eventosReportes";
 import { formatearCedula, nombreCompleto, type AlojamientoEnriquecido } from "@/domain/refugiados";
 import { BloqueConfirmacionReporte } from "@/features/centros/BloqueConfirmacionReporte";
+import { ChecklistTituloNovedad } from "@/features/centros/ChecklistTituloNovedad";
+import { ConfirmarTituloDescriptivoDialog } from "@/features/centros/ConfirmarTituloDescriptivoDialog";
 import { claseSelectReporte } from "@/features/centros/clasesReporte";
 import { formatearDiaCalendario } from "@/features/centros/CalendarioSelectorDia";
 import { Badge } from "@/components/ui/badge";
@@ -371,7 +372,7 @@ export function EventosReporteTab({
 
         <div>
           <Label htmlFor="evento-titulo" className="text-[11px] text-muted-foreground">
-            Título
+            Título descriptivo
           </Label>
           <Input
             id="evento-titulo"
@@ -381,17 +382,12 @@ export function EventosReporteTab({
             onChange={(e) => setBorrador((prev) => ({ ...prev, titulo: e.target.value }))}
             placeholder="Ej. Pelea entre dos adultos en módulo B; mediación y separación"
           />
-          <p className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-snug text-amber-300">
-            Escribe en una sola línea qué ocurrió (quién, dónde, qué se hizo).
-            Mínimo {MIN_PALABRAS_TITULO_EVENTO} palabras — no uses solo «Pelea»: el
-            título debe bastar para entender la novedad. Detalles extras van en
-            Descripción.
-          </p>
+          <ChecklistTituloNovedad titulo={borrador.titulo} />
         </div>
 
         <div>
           <Label htmlFor="evento-desc" className="text-[11px] text-muted-foreground">
-            Descripción
+            Detalles de la novedad
           </Label>
           <Textarea
             id="evento-desc"
@@ -402,7 +398,7 @@ export function EventosReporteTab({
             onChange={(e) =>
               setBorrador((prev) => ({ ...prev, descripcion: e.target.value }))
             }
-            placeholder="Contexto extra, acciones y seguimiento (opcional). No sustituye al título."
+            placeholder="Contexto extra, acciones y seguimiento (opcional). No sustituye al título descriptivo."
           />
         </div>
 
@@ -502,15 +498,16 @@ export function EventosReporteTab({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            disabled={deshabilitado || !tituloEventoValido(borrador.titulo)}
-            onClick={guardarEvento}
-          >
-            {editandoId ? <Check className="size-4" /> : <Plus className="size-4" />}
-            {editandoId ? "Actualizar" : "Guardar esta novedad"}
-          </Button>
+          <ConfirmarTituloDescriptivoDialog onConfirm={guardarEvento}>
+            <Button
+              type="button"
+              size="sm"
+              disabled={deshabilitado || !tituloEventoValido(borrador.titulo)}
+            >
+              {editandoId ? <Check className="size-4" /> : <Plus className="size-4" />}
+              {editandoId ? "Actualizar" : "Guardar esta novedad"}
+            </Button>
+          </ConfirmarTituloDescriptivoDialog>
           {editandoId && (
             <Button type="button" size="sm" variant="outline" onClick={resetForm}>
               Cancelar

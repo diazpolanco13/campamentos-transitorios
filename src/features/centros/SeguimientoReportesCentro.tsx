@@ -52,7 +52,6 @@ import {
 } from "@/domain/seguimientoReportes";
 import {
   CATALOGO_TIPOS_EVENTO_REPORTE,
-  MIN_PALABRAS_TITULO_EVENTO,
   TIPO_EVENTO_REPORTE_DEFAULT,
   eventosArchivados,
   eventosDelDia,
@@ -95,6 +94,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { ChecklistTituloNovedad } from "@/features/centros/ChecklistTituloNovedad";
+import { ConfirmarTituloDescriptivoDialog } from "@/features/centros/ConfirmarTituloDescriptivoDialog";
 import { claseSelectReporte } from "@/features/centros/clasesReporte";
 import {
   CalendarioSelectorDia,
@@ -570,37 +571,39 @@ function TarjetaNovedad({
             </div>
           </div>
           <div>
+            <Label className="text-[11px] text-muted-foreground">Título descriptivo</Label>
             <Input
+              className="mt-1"
               value={borrador.titulo}
               disabled={guardando}
               onChange={(e) => onBorradorChange({ ...borrador, titulo: e.target.value })}
               placeholder="Ej. Pelea entre dos adultos en módulo B; mediación y separación"
             />
-            <p className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-snug text-amber-300">
-              Escribe en una sola línea qué ocurrió (quién, dónde, qué se hizo).
-              Mínimo {MIN_PALABRAS_TITULO_EVENTO} palabras — no uses solo «Pelea»: el
-              título debe bastar para entender la novedad. Detalles extras van en
-              Descripción.
-            </p>
+            <ChecklistTituloNovedad titulo={borrador.titulo} />
           </div>
-          <Textarea
-            rows={3}
-            value={borrador.descripcion}
-            disabled={guardando}
-            onChange={(e) => onBorradorChange({ ...borrador, descripcion: e.target.value })}
-            placeholder="Contexto extra, acciones y seguimiento (opcional). No sustituye al título."
-          />
+          <div>
+            <Label className="text-[11px] text-muted-foreground">Detalles de la novedad</Label>
+            <Textarea
+              className="mt-1"
+              rows={3}
+              value={borrador.descripcion}
+              disabled={guardando}
+              onChange={(e) => onBorradorChange({ ...borrador, descripcion: e.target.value })}
+              placeholder="Contexto extra, acciones y seguimiento (opcional). No sustituye al título descriptivo."
+            />
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              size="sm"
-              className="sm:flex-1"
-              disabled={!tituloEventoValido(borrador.titulo) || guardando}
-              onClick={onGuardar}
-            >
-              {guardando ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-              Guardar
-            </Button>
+            <ConfirmarTituloDescriptivoDialog onConfirm={onGuardar}>
+              <Button
+                type="button"
+                size="sm"
+                className="sm:flex-1"
+                disabled={!tituloEventoValido(borrador.titulo) || guardando}
+              >
+                {guardando ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                Guardar
+              </Button>
+            </ConfirmarTituloDescriptivoDialog>
             <Button type="button" size="sm" variant="outline" disabled={guardando} onClick={onCancelarEdicion}>
               <X className="size-4" />
               Cancelar
@@ -1608,7 +1611,9 @@ function SeguimientoExpandido({
                 </div>
               </div>
               <div>
+                <Label className="text-[11px] text-muted-foreground">Título descriptivo</Label>
                 <Input
+                  className="mt-1"
                   value={nuevaNovedad.titulo}
                   disabled={guardandoNuevaNovedad}
                   onChange={(e) =>
@@ -1617,37 +1622,37 @@ function SeguimientoExpandido({
                   placeholder="Ej. Pelea entre dos adultos en módulo B; mediación y separación"
                   autoFocus
                 />
-                <p className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-snug text-amber-300">
-                  Escribe en una sola línea qué ocurrió (quién, dónde, qué se hizo).
-                  Mínimo {MIN_PALABRAS_TITULO_EVENTO} palabras — no uses solo «Pelea»: el
-                  título debe bastar para entender la novedad. Detalles extras van en
-                  Descripción.
-                </p>
+                <ChecklistTituloNovedad titulo={nuevaNovedad.titulo} />
               </div>
-              <Textarea
-                rows={3}
-                value={nuevaNovedad.descripcion}
-                disabled={guardandoNuevaNovedad}
-                onChange={(e) =>
-                  setNuevaNovedad({ ...nuevaNovedad, descripcion: e.target.value })
-                }
-                placeholder="Contexto extra, acciones y seguimiento (opcional). No sustituye al título."
-              />
+              <div>
+                <Label className="text-[11px] text-muted-foreground">Detalles de la novedad</Label>
+                <Textarea
+                  className="mt-1"
+                  rows={3}
+                  value={nuevaNovedad.descripcion}
+                  disabled={guardandoNuevaNovedad}
+                  onChange={(e) =>
+                    setNuevaNovedad({ ...nuevaNovedad, descripcion: e.target.value })
+                  }
+                  placeholder="Contexto extra, acciones y seguimiento (opcional). No sustituye al título descriptivo."
+                />
+              </div>
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="sm:flex-1"
-                  disabled={!tituloEventoValido(nuevaNovedad.titulo) || guardandoNuevaNovedad}
-                  onClick={() => void guardarNuevaNovedad()}
-                >
-                  {guardandoNuevaNovedad ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Check className="size-4" />
-                  )}
-                  Guardar novedad
-                </Button>
+                <ConfirmarTituloDescriptivoDialog onConfirm={() => void guardarNuevaNovedad()}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="sm:flex-1"
+                    disabled={!tituloEventoValido(nuevaNovedad.titulo) || guardandoNuevaNovedad}
+                  >
+                    {guardandoNuevaNovedad ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Check className="size-4" />
+                    )}
+                    Guardar novedad
+                  </Button>
+                </ConfirmarTituloDescriptivoDialog>
                 <Button
                   type="button"
                   size="sm"
