@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BadgeCheck, Clock3, FileSpreadsheet, Pencil, Trash2 } from "lucide-react";
+import { BadgeCheck, Ban, Clock3, FileSpreadsheet, Pencil, Trash2 } from "lucide-react";
 import { type RegistroCensoGuardado } from "@/data/reposCenso";
 import { CEDULA_JEFE_NO_SE } from "@/domain/catalogosHumanitarios";
 import { Badge } from "@/components/ui/badge";
@@ -32,8 +32,18 @@ function tituloSiipol(fila: RegistroCensoGuardado): string {
   return partes.filter(Boolean).join(" · ");
 }
 
+function documentoInvalidoNexus(fila: RegistroCensoGuardado): boolean {
+  if (fila.documento_invalido) return true;
+  const digitos = (fila.documento ?? "").replace(/\D/g, "");
+  if (!digitos) return false;
+  return digitos.length < 6 || digitos.length > 8 || /^0+$/.test(digitos);
+}
+
 function tituloNexus(fila: RegistroCensoGuardado): string {
   if (!fila.documento?.trim()) return "Sin documento — no verificable en Nexus";
+  if (documentoInvalidoNexus(fila)) {
+    return "Cédula con formato inválido — no consultable en Nexus (esperado 6–8 dígitos)";
+  }
   if (!fila.verificado_nexus) return "Pendiente de verificación Nexus/SAIME";
   const partes = ["Verificado Nexus", fila.verificado_nexus_fuente];
   if (fila.verificado_nexus_en) {
@@ -119,6 +129,14 @@ function FilaRegistro({
       <TableCell className="px-2 py-1.5 text-center" title={tituloNexus(fila)}>
         {!fila.documento?.trim() ? (
           "—"
+        ) : documentoInvalidoNexus(fila) ? (
+          <Badge
+            variant="outline"
+            className="h-5 gap-1 border-rose-500/60 px-1.5 text-[10px] text-rose-700 dark:text-rose-300"
+          >
+            <Ban className="size-3" />
+            Inválida
+          </Badge>
         ) : fila.verificado_nexus ? (
           <Badge
             variant="outline"

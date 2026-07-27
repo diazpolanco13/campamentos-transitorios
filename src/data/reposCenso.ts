@@ -196,6 +196,8 @@ export interface RegistroCensoGuardado {
   verificado_nexus?: boolean;
   verificado_nexus_en?: string | null;
   verificado_nexus_fuente?: string;
+  /** Cédula con formato no consultable en Nexus (largo fuera de 6–8). */
+  documento_invalido?: boolean;
 }
 
 /** Fila devuelta por censo_listado_red (registro + campamento). */
