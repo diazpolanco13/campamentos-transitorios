@@ -22,16 +22,30 @@ interface Opciones {
   desde?: string;
 }
 
+export interface UseOcupacionesCentrosEstado {
+  snapshots: SnapshotOcupacion[];
+  /** `true` solo hasta la primera resolución (éxito o error). Realtime no lo reactiva. */
+  cargando: boolean;
+}
+
 function normalizarDia(dia: string | unknown): string {
   return String(dia).slice(0, 10);
 }
 
-export function useOcupacionesCentros(opts: Opciones = {}): SnapshotOcupacion[] {
+/**
+ * Variante con estado de carga. Usar cuando la vista no debe pintar totales
+ * de ficha antes de aplicar el último parte (`ocupaciones_centros`).
+ */
+export function useOcupacionesCentrosConEstado(
+  opts: Opciones = {},
+): UseOcupacionesCentrosEstado {
   const { centroId, desde } = opts;
   const [snapshots, setSnapshots] = useState<SnapshotOcupacion[]>([]);
+  const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
     let cancelado = false;
+    setCargando(true);
 
     async function cargar() {
       // Paginado: la ventana de 30 días de la red ya supera las 1000 filas
@@ -45,14 +59,15 @@ export function useOcupacionesCentros(opts: Opciones = {}): SnapshotOcupacion[] 
       if (cancelado) return;
       if (error) {
         console.warn("[useOcupacionesCentros] error en select:", error.message);
-        return;
+      } else {
+        setSnapshots(
+          ((data ?? []) as SnapshotOcupacion[]).map((s) => ({
+            ...s,
+            dia: normalizarDia(s.dia),
+          })),
+        );
       }
-      setSnapshots(
-        ((data ?? []) as SnapshotOcupacion[]).map((s) => ({
-          ...s,
-          dia: normalizarDia(s.dia),
-        })),
-      );
+      setCargando(false);
     }
 
     void cargar();
@@ -106,5 +121,9 @@ export function useOcupacionesCentros(opts: Opciones = {}): SnapshotOcupacion[] 
     };
   }, [centroId, desde]);
 
-  return snapshots;
+  return { snapshots, cargando };
+}
+
+export function useOcupacionesCentros(opts: Opciones = {}): SnapshotOcupacion[] {
+  return useOcupacionesCentrosConEstado(opts).snapshots;
 }

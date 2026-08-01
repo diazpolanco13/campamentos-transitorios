@@ -19,7 +19,7 @@ import {
 import type { BaseMapa } from "@/map/estiloMapa";
 import { BASE_MAPA_DEFECTO } from "@/map/estiloMapa";
 import { useSupabaseQueryConEstado } from "@/data/useSupabaseQuery";
-import { useOcupacionesCentros } from "@/data/useOcupacionesCentros";
+import { useOcupacionesCentrosConEstado } from "@/data/useOcupacionesCentros";
 import { desenvolver, type FilaSync } from "@/data/desenvolver";
 import { aplicarPartesActualesACentros } from "@/domain/parteActualCentros";
 import {
@@ -147,7 +147,12 @@ export function CentrosView() {
       clientFilter: (c) => !c.deleted,
     },
   );
-  const snapshotsOcupacion = useOcupacionesCentros();
+  const {
+    snapshots: snapshotsOcupacion,
+    cargando: cargandoOcupaciones,
+  } = useOcupacionesCentrosConEstado();
+  /** Totales de red: no pintar hasta tener partes; si no, flash ficha → parte. */
+  const cargandoRed = cargandoCentros || cargandoOcupaciones;
   const centrosRed = useMemo(
     () =>
       aplicarPartesActualesACentros(
@@ -301,7 +306,7 @@ export function CentrosView() {
               onAbrirPanel={() => setPanelCentrosAbierto(true)}
             />
 
-            {mostrarCintaTotales && (
+            {mostrarCintaTotales && !cargandoRed && (
               <div
                 className={
                   panelCentrosAbierto
@@ -332,7 +337,7 @@ export function CentrosView() {
               centros={centros}
               onSeleccionar={(id) => navigate(`/centro/${id}`)}
               puedeCrearCentro={puedeEliminar}
-              cargando={cargandoCentros}
+              cargando={cargandoRed}
             />
           </MarcoVista>
         )}

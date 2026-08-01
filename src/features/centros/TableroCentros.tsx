@@ -232,31 +232,40 @@ function KpiRed({
   etiqueta,
   unidad,
   detalle,
+  cargando = false,
 }: {
   icono: React.ReactNode;
   valor: number;
   etiqueta: string;
   unidad?: string;
   detalle?: string;
+  /** Evita pintar totales de ficha antes de aplicar el último parte. */
+  cargando?: boolean;
 }) {
   return (
     <div
       className="min-w-0 rounded-lg border border-border/70 bg-background/80 px-2.5 py-2 sm:rounded-xl sm:px-3 sm:py-2.5"
-      title={detalle}
+      title={cargando ? undefined : detalle}
     >
       <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground sm:text-[11px]">
         {icono}
         <span className="truncate">{etiqueta}</span>
       </div>
       <div className="mt-0.5 flex items-baseline gap-1">
-        <span className="text-lg font-bold tabular-nums leading-none text-foreground sm:text-xl">
-          {n(valor)}
-        </span>
-        {unidad && (
-          <span className="text-[10px] text-muted-foreground sm:text-[11px]">{unidad}</span>
+        {cargando ? (
+          <Skeleton className="h-5 w-16 sm:h-6 sm:w-20" aria-hidden />
+        ) : (
+          <>
+            <span className="text-lg font-bold tabular-nums leading-none text-foreground sm:text-xl">
+              {n(valor)}
+            </span>
+            {unidad && (
+              <span className="text-[10px] text-muted-foreground sm:text-[11px]">{unidad}</span>
+            )}
+          </>
         )}
       </div>
-      {detalle && (
+      {detalle && !cargando && (
         <p className="mt-1 hidden truncate text-[9px] leading-tight text-muted-foreground/80 sm:block">
           {detalle}
         </p>
@@ -709,26 +718,31 @@ export function TableroCentros({
               icono={<LayoutGrid className="size-3.5 text-emerald-300" />}
               valor={visiblesUnidades}
               etiqueta="Campamentos"
+              cargando={cargando}
             />
             <KpiRed
               icono={<Home className="size-3.5 text-orange-300" />}
               valor={totales.familias}
               etiqueta="Familias"
+              cargando={cargando}
             />
             <KpiRed
               icono={<Users className="size-3.5 text-sky-300" />}
               valor={totales.refugiados}
               etiqueta="Damnificados"
+              cargando={cargando}
             />
             <KpiRed
               icono={<UserCog className="size-3.5 text-violet-300" />}
               valor={totales.funcionarios}
               etiqueta="Funcionarios"
+              cargando={cargando}
             />
             <KpiRed
               icono={<PawPrint className="size-3.5 text-amber-300" />}
               valor={totales.mascotas}
               etiqueta="Mascotas"
+              cargando={cargando}
             />
           </div>
         }
@@ -752,6 +766,7 @@ export function TableroCentros({
               etiqueta="Agua potable"
               unidad="L/día"
               detalle={`${AGUA_POTABLE_LITROS_PERSONA_DIA} L/pers. · bebida y cocina`}
+              cargando={cargando}
             />
             <KpiRed
               icono={<Droplets className="size-3.5 text-sky-300" />}
@@ -759,6 +774,7 @@ export function TableroCentros({
               etiqueta="Agua uso cotidiano"
               unidad="L/día"
               detalle={`${AGUA_LITROS_PERSONA_DIA} L/pers. · aseo, pocetas, lavado`}
+              cargando={cargando}
             />
             <KpiRed
               icono={<Utensils className="size-3.5 text-amber-300" />}
@@ -766,6 +782,7 @@ export function TableroCentros({
               etiqueta="Comidas"
               unidad="/día"
               detalle={`${COMIDAS_POR_PERSONA_DIA} raciones/pers.`}
+              cargando={cargando}
             />
           </div>
 

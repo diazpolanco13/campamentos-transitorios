@@ -40,8 +40,32 @@ DEFAULT_CIRCUIT_BREAKER = 5
 DEFAULT_NEXUS_TIMEOUT = 20.0
 PROGRESS_INTERVAL = 10.0
 PAGE_SIZE = 1000
-SIN_CEDULA = {"", "S/C", "SC", "S/N", "SN", "S/D", "SD", "SIN CEDULA", "SIN CÉDULA", "N/A", "NA", "-"}
+SIN_CEDULA = {
+    "",
+    "S/C",
+    "SC",
+    "S/N",
+    "SN",
+    "S/D",
+    "SD",
+    "SIN CEDULA",
+    "SIN CÉDULA",
+    "SIN DOCUMENTO",
+    "SIN DOC",
+    "N/A",
+    "NA",
+    "-",
+    "NO",
+    "NO TIENE",
+    "NO POSEE",
+    "NO POSSÉ",
+    "NO APORTO",
+    "NO APORTÓ",
+    "NOPOSEE",
+    "NOTIENE",
+}
 LETRAS_NEXUS = {"V", "E"}
+SIN_CEDULA_KEYS: set[str] | None = None
 
 ALIASES_NOMBRE: dict[str, str] = {
     "delgado chalbaud": "centro-33",
@@ -83,6 +107,18 @@ def key(texto: str) -> str:
     texto = strip_accents(str(texto or "").lower())
     texto = re.sub(r"[^a-z0-9]+", " ", texto)
     return re.sub(r"\s+", " ", texto).strip()
+
+
+def _sin_cedula_keys() -> set[str]:
+    global SIN_CEDULA_KEYS
+    if SIN_CEDULA_KEYS is None:
+        SIN_CEDULA_KEYS = {key(m) for m in SIN_CEDULA}
+    return SIN_CEDULA_KEYS
+
+
+def es_marcador_sin_cedula(valor: str) -> bool:
+    """True si el texto declara ausencia de documento (no posee, s/c, etc.)."""
+    return key(valor) in _sin_cedula_keys()
 
 
 def normalizar_nombre_centro(texto: str) -> str:
@@ -245,10 +281,14 @@ def guardar_cache_nexus(
     anon_key: str,
     jwt: str,
     fichas: dict[tuple[str, str], dict[str, Any]],
-) -> None:
-    """Persiste fichas nuevas en lotes; próximas corridas no consultan Nexus."""
+) -> str:
+    """Persiste fichas nuevas en lotes; próximas corridas no consultan Nexus.
+
+    Reautentica si el JWT expiró (corridas Nexus largas > ~1h). Devuelve el JWT
+    vigente tras el guardado.
+    """
     if not fichas:
-        return
+        return jwt
     filas = [
         {
             "letra": letra,
@@ -259,20 +299,31 @@ def guardar_cache_nexus(
         }
         for (letra, cedula), data in fichas.items()
     ]
+    token = jwt
     for inicio in range(0, len(filas), 200):
-        req = urllib.request.Request(
-            f"{url}/rest/v1/nexus_consultas?on_conflict=letra,cedula",
-            data=json.dumps(filas[inicio : inicio + 200]).encode("utf-8"),
-            headers={
-                "apikey": anon_key,
-                "Authorization": f"Bearer {jwt}",
-                "Content-Type": "application/json",
-                "Prefer": "resolution=merge-duplicates,return=minimal",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=60):
-            pass
+        lote = filas[inicio : inicio + 200]
+        for intento in range(2):
+            req = urllib.request.Request(
+                f"{url}/rest/v1/nexus_consultas?on_conflict=letra,cedula",
+                data=json.dumps(lote).encode("utf-8"),
+                headers={
+                    "apikey": anon_key,
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates,return=minimal",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=60):
+                    break
+            except urllib.error.HTTPError as exc:
+                if exc.code == 401 and intento == 0:
+                    print("Nexus: JWT expirado al guardar caché · reautenticando…", file=sys.stderr, flush=True)
+                    token = autenticar(url, anon_key)
+                    continue
+                raise
+    return token
 
 
 def listar_centros(url: str, anon_key: str, jwt: str) -> list[CentroApp]:
@@ -317,6 +368,10 @@ def consultar_nexus(
         return {"status": exc.code, "body": body}
     except urllib.error.URLError as exc:
         return {"status": None, "body": {"error": str(exc.reason)}}
+    except TimeoutError as exc:
+        return {"status": None, "body": {"error": f"timeout: {exc}"}}
+    except OSError as exc:
+        return {"status": None, "body": {"error": str(exc)}}
 
 
 def consultar_nexus_concurrente(
@@ -327,6 +382,7 @@ def consultar_nexus_concurrente(
     rate: float,
     circuit_breaker: int,
     timeout: float,
+    flush_fichas: Any | None = None,
 ) -> tuple[
     dict[tuple[str, str], dict[str, Any]],
     list[dict[str, Any]],
@@ -336,14 +392,31 @@ def consultar_nexus_concurrente(
 
     Con concurrencia >1, envía una solicitud cada 1/N segundos y mantiene como
     máximo N en vuelo. Concurrencia 1 conserva modo secuencial con ``rate``.
+    ``flush_fichas`` opcional se llama cada 100 fichas OK (y al final) para
+    persistir caché incremental en corridas largas.
     """
     fichas: dict[tuple[str, str], dict[str, Any]] = {}
+    pendientes_flush: dict[tuple[str, str], dict[str, Any]] = {}
     errores: list[dict[str, Any]] = []
     omitidas = 0
     fallos_consecutivos = 0
     procesadas = 0
     total = len(pendientes)
     ultimo_progreso = time.monotonic()
+
+    def flush_si_toca(forzar: bool = False) -> None:
+        if flush_fichas is None or not pendientes_flush:
+            return
+        if not forzar and len(pendientes_flush) < 100:
+            return
+        lote = dict(pendientes_flush)
+        pendientes_flush.clear()
+        flush_fichas(lote)
+        print(
+            f"Nexus: caché persistida · +{len(lote)} fichas (acum {len(fichas)})",
+            file=sys.stderr,
+            flush=True,
+        )
 
     def procesar(clave: tuple[str, str]) -> tuple[tuple[str, str], dict[str, Any]]:
         letra, cedula = clave
@@ -359,7 +432,9 @@ def consultar_nexus_concurrente(
         body = resultado.get("body")
         if status == 200 and isinstance(body, dict) and body.get("ok") is not False:
             fichas[clave] = body
+            pendientes_flush[clave] = body
             fallos_consecutivos = 0
+            flush_si_toca()
         else:
             if status == 404 or (status == 200 and isinstance(body, dict) and body.get("ok") is False):
                 fallos_consecutivos = 0
@@ -392,6 +467,7 @@ def consultar_nexus_concurrente(
             if registrar(clave, resultado):
                 omitidas = len(pendientes) - indice - 1
                 break
+        flush_si_toca(forzar=True)
         return fichas, errores, omitidas
 
     intervalo = 1.0 / concurrency
@@ -449,6 +525,7 @@ def consultar_nexus_concurrente(
                     resultado = {"status": None, "body": {"error": str(exc)}}
                 registrar(clave, resultado)
 
+    flush_si_toca(forzar=True)
     return fichas, errores, omitidas
 
 
@@ -491,7 +568,15 @@ def resolver_centro(nombre_raw: str, centros: list[CentroApp], forzado: str | No
 def _es_fila_header(celdas: list[str]) -> bool:
     """Detecta fila de encabezados reales (salta título mergeado arriba)."""
     unidos = " ".join(key(c) for c in celdas if c)
-    marcadores = ("primer nombre", "documento", "cedula", "cédula", "apellido", "campamento")
+    marcadores = (
+        "primer nombre",
+        "nombre completo",
+        "documento",
+        "cedula",
+        "cédula",
+        "apellido",
+        "campamento",
+    )
     hits = sum(1 for m in marcadores if m in unidos)
     return hits >= 2
 
@@ -540,11 +625,25 @@ def leer_filas(path: Path) -> tuple[list[dict[str, Any]], str, list[str]]:
 
 
 def pick(row: dict[str, Any], *aliases: str) -> Any:
+    """Busca valor por alias exacto o header que empieza con el alias.
+
+    Plantillas largas ('Cédula (Opcional si es menor…)') matchean 'cedula'.
+    """
     mapa = {key(k): v for k, v in row.items()}
     for alias in aliases:
-        valor = mapa.get(key(alias))
+        ka = key(alias)
+        valor = mapa.get(ka)
         if valor not in (None, ""):
             return valor
+    for alias in aliases:
+        ka = key(alias)
+        if not ka:
+            continue
+        for hk, v in mapa.items():
+            if v in (None, ""):
+                continue
+            if hk.startswith(ka + " ") or hk.startswith(ka + "("):
+                return v
     return ""
 
 
@@ -613,34 +712,127 @@ def scrub_dato_politico(obs: str) -> str:
 
 
 def parse_cedula(raw: Any) -> tuple[str, str]:
-    valor = texto(raw).upper()
-    if valor in SIN_CEDULA:
+    """Extrae (tipo_doc, numero). Rechaza texto basura ('no posee', 'no tiene').
+
+    Solo acepta patrones de documento real: V/E/P + dígitos, o solo dígitos
+    (con separadores de miles). Núcleos familiares (12345678-1) → sin cédula.
+    Nunca persiste texto libre en documento: si hay letras basura, se descartan
+    o la fila queda sin cédula.
+    """
+    valor = texto(raw).upper().strip()
+    if not valor or es_marcador_sin_cedula(valor):
         return "", ""
-    match = re.match(r"^([VEP])[-\s.]?(\d+)$", valor)
+
+    # Núcleos familiares: menor sin cédula = doc adulto + sufijo corto (1-2 dígitos).
+    if re.match(r"^([VEP][-\s.]?)?[\d.,]+-\d{1,2}$", valor):
+        return "", ""
+
+    # V/E/P + número (puntos/comas/espacios/guiones como separadores).
+    match = re.match(r"^([VEP])[-\s.]?([\d.,\s\-]+)$", valor)
     if match:
-        return match.group(1), match.group(2)
-    # Núcleos familiares: menores sin cédula como V-12345678-1 (padre + índice).
-    # No son documento real → sin cédula (evitar concatenar dígitos falsos).
-    if re.match(r"^([VEP])[-\s.]?\d+-\d+$", valor):
+        letra, bruto = match.group(1), match.group(2)
+        num = re.sub(r"\D", "", bruto)
+        if 5 <= len(num) <= 10 and not set(num) <= {"0"}:
+            if int(num) > 70_000_000:
+                return "E", num
+            return letra, num
         return "", ""
+
+    # Solo dígitos / separadores de miles — sin letras residuales.
+    if re.fullmatch(r"[\d.,\s\-]+", valor):
+        num = re.sub(r"\D", "", valor)
+        if 5 <= len(num) <= 10 and not set(num) <= {"0"}:
+            if int(num) > 70_000_000:
+                return "E", num
+            return "V", num
+        return "", ""
+
+    # Mezcla texto+número: conservar solo dígitos; nunca persistir el texto.
     digitos = re.sub(r"\D", "", valor)
-    if digitos and len(digitos) >= 5:
-        return "V", digitos
+    if 5 <= len(digitos) <= 10 and not set(digitos) <= {"0"}:
+        if valor.lstrip().startswith("E"):
+            letra = "E"
+        elif valor.lstrip().startswith("P"):
+            letra = "P"
+        elif valor.lstrip().startswith("V"):
+            letra = "V"
+        elif int(digitos) > 70_000_000:
+            letra = "E"
+        else:
+            letra = "V"
+        return letra, digitos
+
+    # Texto libre sin número usable: sin cédula.
     return "", ""
 
 
+PARTICULAS_NOMBRE = frozenset(
+    {"de", "del", "la", "las", "los", "y", "san", "santa", "da", "do", "das", "dos", "e"}
+)
+
+
+def _tokens_persona(texto_raw: str) -> list[str]:
+    """Tokens de nombre/apellido: colapsa espacios y quita puntuación residual."""
+    limpio = re.sub(r"\s+", " ", texto(texto_raw)).strip()
+    if not limpio:
+        return []
+    out: list[str] = []
+    for t in limpio.split():
+        tok = re.sub(r"^[^\wÁÉÍÓÚÜÑáéíóúüñ]+|[^\wÁÉÍÓÚÜÑáéíóúüñ]+$", "", t)
+        if tok:
+            out.append(tok)
+    return out
+
+
+def normalizar_caso_persona(valor: str) -> str:
+    """Title Case con partículas españolas en minúscula (De La Rosa → de la Rosa no; La Rosa)."""
+    partes = _tokens_persona(valor)
+    if not partes:
+        return ""
+    out: list[str] = []
+    for i, tok in enumerate(partes):
+        low = strip_accents(tok).lower()
+        if i > 0 and low in PARTICULAS_NOMBRE:
+            out.append(low)
+        elif len(tok) == 1 and tok.isalpha():
+            # Inicial suelta (B, J) → mayúscula simple
+            out.append(tok.upper())
+        else:
+            out.append(tok[:1].upper() + tok[1:].lower() if tok else "")
+    return " ".join(p for p in out if p)
+
+
 def split_nombre(nombre: str) -> tuple[str, str]:
-    partes = nombre.strip().split(None, 1)
+    partes = _tokens_persona(nombre)
     if not partes:
         return "", ""
     if len(partes) == 1:
         return partes[0], ""
-    return partes[0], partes[1]
+    return partes[0], " ".join(partes[1:])
+
+
+def split_apellido(apellido: str) -> tuple[str, str]:
+    """Separa apellidos; une compuestos con partícula (La Rosa, De Los Santos)."""
+    partes = _tokens_persona(apellido)
+    if not partes:
+        return "", ""
+    if len(partes) == 1:
+        return partes[0], ""
+    # Primer apellido compuesto: La Rosa / De La Cruz / San Juan
+    i = 0
+    if strip_accents(partes[0]).lower() in PARTICULAS_NOMBRE:
+        i = 1
+        while i < len(partes) - 1 and strip_accents(partes[i]).lower() in PARTICULAS_NOMBRE:
+            i += 1
+        if i < len(partes):
+            i += 1
+        return " ".join(partes[:i]), " ".join(partes[i:])
+    return partes[0], " ".join(partes[1:])
 
 
 def split_nombre_completo(nombre: str) -> tuple[str, str, str, str]:
     """Separa nombre completo cuando planilla no trae columnas individuales."""
-    partes = nombre.strip().split()
+    partes = _tokens_persona(nombre)
     if len(partes) < 2:
         return (partes[0] if partes else ""), "", "", ""
     if len(partes) == 2:
@@ -648,6 +840,136 @@ def split_nombre_completo(nombre: str) -> tuple[str, str, str, str]:
     if len(partes) == 3:
         return partes[0], partes[1], partes[2], ""
     return partes[0], partes[1], partes[2], " ".join(partes[3:])
+
+
+# Apellidos vistos en la planilla (rellenado en main) para despegar ALLCAPS.
+APELLIDOS_CONOCIDOS: set[str] = set()
+
+
+def despegar_nombre_pegado(nombre: str) -> str:
+    """Separa PascalCase/CamelCase sin espacios (ErinderAlexdick → Erinder Alexdick)."""
+    t = texto(nombre)
+    if not t or " " in t:
+        return t
+    if re.search(r"[a-z]", t) and re.search(r"[A-Z]", t):
+        t = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", t)
+        t = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", t)
+    return t
+
+
+def cargar_apellidos_conocidos(filas: list[dict[str, Any]]) -> None:
+    """Indexa apellidos de filas con espacios para despegar nombres ALLCAPS pegados."""
+    global APELLIDOS_CONOCIDOS
+    apes: set[str] = set()
+    for row in filas:
+        for alias in (
+            "nombre completo",
+            "nombres y apellidos",
+            "nombre y apellidos",
+            "apellidos",
+            "apellido",
+            "primer apellido",
+            "segundo apellido",
+        ):
+            val = texto(pick(row, alias))
+            if not val:
+                continue
+            if "apellido" in alias and " " not in val and len(val) >= 3:
+                apes.add(strip_accents(val).upper())
+                continue
+            partes = val.split()
+            if len(partes) < 2:
+                continue
+            # Solo últimos 1–2 tokens = apellidos (evita indexar nombres de pila).
+            for tok in partes[-2:]:
+                tok_u = strip_accents(tok).upper()
+                if len(tok_u) >= 3 and tok_u.isalpha():
+                    apes.add(tok_u)
+    # Semilla mínima frecuente en planillas VE
+    apes.update(
+        {
+            "GARCIA", "GONZALEZ", "RODRIGUEZ", "MARTINEZ", "HERNANDEZ", "LOPEZ",
+            "PEREZ", "SANCHEZ", "RAMIREZ", "TORRES", "FLORES", "RIVERA", "GOMEZ",
+            "DIAZ", "MORALES", "REYES", "CRUZ", "ORTIZ", "GUTIERREZ", "CASTILLO",
+            "ROJAS", "MOYA", "MATHEUS", "QUIROZ", "VERA", "SALAZAR", "ARAUJO",
+            "HIPOLITO", "PALOMINO", "PARACO", "ANDRADE", "SALVAREZ", "ALVAREZ",
+            "PACHECO", "ZAMBRANO", "ZAMBRZO", "CORPA", "SALVARADO", "ALVARADO",
+            "SUAREZ", "GUZMAN", "MUJICA", "SANTANA", "SALAVARRIA", "SOJO",
+            "DELGADO",
+        }
+    )
+    APELLIDOS_CONOCIDOS = apes
+
+
+def separar_allcaps_pegado(nombre: str) -> tuple[str, str, str, str] | None:
+    """Si nombre es UN token ALLCAPS, pela hasta 2 apellidos conocidos del final."""
+    t = texto(nombre)
+    if not t or " " in t or not APELLIDOS_CONOCIDOS:
+        return None
+    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+", t):
+        return None
+    # Solo si no hay minúsculas intercaladas (ya cubierto por CamelCase)
+    if re.search(r"[a-z]", t) and re.search(r"[A-Z]", t):
+        return None
+    rest = strip_accents(t).upper()
+    apellidos_ord = sorted(APELLIDOS_CONOCIDOS, key=len, reverse=True)
+    found: list[str] = []
+    for _ in range(2):
+        hit = next(
+            (a for a in apellidos_ord if rest.endswith(a) and len(rest) >= len(a) + 3),
+            None,
+        )
+        if not hit:
+            break
+        found.insert(0, hit.title())
+        rest = rest[: -len(hit)]
+    if not found or len(rest) < 2:
+        return None
+    return rest.title(), "", found[0], (found[1] if len(found) > 1 else "")
+
+
+def parse_nucleo_familiar(raw: Any) -> tuple[str, str, str] | None:
+    """Detecta cédula de responsable + sufijo de menor (17089732-1).
+
+    Retorna (tipo_doc_jefe, documento_jefe, sufijo) o None.
+    """
+    valor = texto(raw).upper().strip()
+    if not valor:
+        return None
+    match = re.match(r"^([VEP])?[-\s.]?([\d.,\s]+)-(\d{1,2})$", valor)
+    if not match:
+        return None
+    letra = match.group(1) or ""
+    num = re.sub(r"\D", "", match.group(2))
+    sufijo = match.group(3)
+    if not (5 <= len(num) <= 10) or set(num) <= {"0"}:
+        return None
+    if not letra:
+        letra = "E" if int(num) > 70_000_000 else "V"
+    return letra, num, sufijo
+
+
+def mapear_parentesco_jefe(raw: str) -> str:
+    p = key(raw)
+    if not p:
+        return "Hijo/a"
+    if "hijo" in p or "hija" in p:
+        return "Hijo/a"
+    if "niet" in p:
+        return "Nieto/a"
+    if "sobrin" in p:
+        return "Sobrino/a"
+    if "herman" in p:
+        return "Hermano/a"
+    if "padre" in p or "madre" in p or "papa" in p or "mama" in p:
+        return "Padre/Madre"
+    if "espos" in p or "conyug" in p or "mujer" in p or "marido" in p:
+        return "Cónyuge"
+    if "abuel" in p:
+        return "Abuelo/a"
+    if "tio" in p or "tia" in p:
+        return "Tío/a"
+    return "Otro familiar"
 
 
 def normalizar_sexo(valor: Any) -> str:
@@ -691,53 +1013,111 @@ def aplicar_nexus(payload: dict[str, Any], body: dict[str, Any], fuente: str = "
     payload["verificado_nexus_fuente"] = fuente if fuente in {"nexus", "cache"} else "nexus"
 
 
+# Respuestas SIIPOL que confirman verificación pero no aportan obs útil.
+_SIIPOL_MARCA_SIN_OBS = frozenset(
+    {
+        "no registra",
+        "menor",
+        "si",
+        "sí",
+        "no",
+        "true",
+        "false",
+        "verificado",
+        "ok",
+        "n/a",
+        "na",
+        "-",
+    }
+)
+
+
 def fila_a_payload(
     row: dict[str, Any],
     centros: list[CentroApp],
     centro_forzado: str | None,
     col_centro: str | None,
+    *,
+    ignorar_centro: bool = False,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    ced_raw = pick(row, "cedula", "cédula", "documento", "ci", "doc")
+    ced_raw = pick(row, "cedula", "cédula", "cedúla", "documento", "ci", "doc")
+    nucleo = parse_nucleo_familiar(ced_raw)
     tipo_doc, documento = parse_cedula(ced_raw)
     tipo_doc_col = texto(pick(row, "tipo doc.", "tipo doc", "tipo_doc", "tipo documento")).upper()
     if tipo_doc_col in {"V", "E", "P"} and documento:
         tipo_doc = tipo_doc_col
 
-    nombre = texto(pick(row, "nombres", "nombre", "primer nombre", "primer_nombre"))
-    segundo_nombre = texto(pick(row, "segundo nombre", "segundo_nombre"))
-    apellido = texto(pick(row, "apellidos", "apellido", "primer apellido", "primer_apellido"))
-    segundo_apellido = texto(pick(row, "segundo apellido", "segundo_apellido"))
-    if not nombre and not apellido:
-        completo = texto(
-            pick(
-                row,
-                "nombre completo",
-                "nombre_completo",
-                "nombre y apellido",
-                "nombres y apellidos",
-                "nombre y apellidos",
-                "habitante nombres y apellidos",
-                "habitante (nombres y apellidos)",
-                "beneficiario",
-                "persona",
-            )
+    # Núcleo familiar (doc-responsable-N): menor sin cédula propia.
+    jefe_tipo_doc = ""
+    jefe_documento = ""
+    parentesco_jefe = ""
+    if nucleo:
+        tipo_doc, documento = "", ""
+        jefe_tipo_doc, jefe_documento, _sufijo = nucleo
+        parentesco_jefe = mapear_parentesco_jefe(
+            texto(pick(row, "parentesco", "parentesco jefe", "parentesco_jefe", "relacion", "relación"))
         )
+
+    # Preferir columna única primero: pick("nombre") matchea "nombre completo" por prefijo.
+    completo = texto(
+        pick(
+            row,
+            "nombre completo",
+            "nombre_completo",
+            "nombre_apellido",
+            "nombre apellido",
+            "nombres_apellidos",
+            "nombre y apellido",
+            "nombres y apellidos",
+            "nombre y apellidos",
+            "habitante nombres y apellidos",
+            "habitante (nombres y apellidos)",
+            "beneficiario",
+            "persona",
+        )
+    )
+    nombre = texto(pick(row, "nombres", "nombre", "primer nombre", "primer_nombre"))
+    segundo_nombre_col = texto(pick(row, "segundo nombre", "segundo_nombre"))
+    apellido = texto(pick(row, "apellidos", "apellido", "primer apellido", "primer_apellido"))
+    segundo_apellido_col = texto(pick(row, "segundo apellido", "segundo_apellido"))
+
+    # Planillas mixtas: nombre vacío y nombre completo volcado en APELLIDO.
+    if not completo and not nombre and apellido and len(_tokens_persona(apellido)) >= 2:
+        completo = apellido
+        apellido = ""
+
+    completo = despegar_nombre_pegado(completo)
+    nombre = despegar_nombre_pegado(nombre)
+    apellido = despegar_nombre_pegado(apellido)
+
+    allcaps = separar_allcaps_pegado(completo) or separar_allcaps_pegado(nombre)
+    if allcaps:
+        primer_nombre, segundo_nombre, primer_apellido, segundo_apellido = allcaps
+    elif completo:
         primer_nombre, segundo_nombre, primer_apellido, segundo_apellido = split_nombre_completo(completo)
     else:
         primer_nombre, resto_nombre = split_nombre(nombre)
-        primer_apellido, resto_apellido = split_nombre(apellido)
-        segundo_nombre = segundo_nombre or resto_nombre
-        segundo_apellido = segundo_apellido or resto_apellido
+        primer_apellido, resto_apellido = split_apellido(apellido)
+        segundo_nombre = segundo_nombre_col or resto_nombre
+        segundo_apellido = segundo_apellido_col or resto_apellido
+
+    primer_nombre = normalizar_caso_persona(primer_nombre)
+    segundo_nombre = normalizar_caso_persona(segundo_nombre)
+    primer_apellido = normalizar_caso_persona(primer_apellido)
+    segundo_apellido = normalizar_caso_persona(segundo_apellido)
 
     nombre_centro = texto(row.get(col_centro, "")) if col_centro else ""
     if not nombre_centro:
         nombre_centro = texto(pick(row, "campamento", "centro", "escuela", "refugio", "institucion", "institución"))
-    centro_id, centro_raw, match = resolver_centro(nombre_centro, centros, centro_forzado)
-    if not centro_id:
-        return None, {
-            "error": "centro_inactivo" if match == "inactivo" else "sin_centro",
-            "nombre_centro_raw": centro_raw or nombre_centro,
-        }
+    if ignorar_centro and not centro_forzado:
+        centro_id, centro_raw, match = "", "", "omitido"
+    else:
+        centro_id, centro_raw, match = resolver_centro(nombre_centro, centros, centro_forzado)
+        if not centro_id:
+            return None, {
+                "error": "centro_inactivo" if match == "inactivo" else "sin_centro",
+                "nombre_centro_raw": centro_raw or nombre_centro,
+            }
 
     edad = parse_edad(pick(row, "edad", "age"))
     tipo_registro = texto(pick(row, "tipo de registro", "tipo registro", "tipo registro policial"))
@@ -750,6 +1130,25 @@ def fila_a_payload(
             "descripción (verificación)",
         )
     )
+    # Columna "Verificado SIIPOL" del consolidado: NO REGISTRA / delito / firma / MENOR.
+    col_verificado_siipol = texto(
+        pick(
+            row,
+            "verificado siipol",
+            "verificacion siipol",
+            "verificación siipol",
+            "estado siipol",
+            "resultado siipol",
+        )
+    )
+    observaciones_seguridad_col = texto(
+        pick(
+            row,
+            "observaciones seguridad",
+            "observacion seguridad",
+            "observación seguridad",
+        )
+    )
     observaciones_generales = texto(
         pick(
             row,
@@ -760,10 +1159,17 @@ def fila_a_payload(
             "información de interés",
             "sistemas de contrainteligencia y siipol",
             "sistemas de contrainteligencia",
-            "siipol",
         )
     )
-    observaciones = descripcion_verificacion or observaciones_generales
+    obs_desde_verificado = ""
+    if col_verificado_siipol and key(col_verificado_siipol) not in _SIIPOL_MARCA_SIN_OBS:
+        obs_desde_verificado = col_verificado_siipol
+    observaciones = (
+        observaciones_seguridad_col
+        or descripcion_verificacion
+        or obs_desde_verificado
+        or observaciones_generales
+    )
     flags_texto = inferir_flags_seguridad(observaciones)
     registro_policial = parse_bool(
         pick(
@@ -781,8 +1187,14 @@ def fila_a_payload(
     ) or flags_texto["solicitado"]
     deportado = parse_bool(pick(row, "deportado")) or flags_texto["deportado"]
     # Dato político sensible: nunca persistir firma de referéndum ni afiliación.
+    # Evidencia SIIPOL se mide ANTES del scrub: "NO REGISTRA" / "SIN INFORMACIÓN" también cuentan.
+    evidencia_siipol = (
+        bool(col_verificado_siipol)
+        or bool(descripcion_verificacion)
+        or bool(observaciones_seguridad_col)
+    )
     observaciones = scrub_dato_politico(observaciones)
-    verificado_siipol = bool(descripcion_verificacion) or any(
+    verificado_siipol = evidencia_siipol or any(
         (registro_policial, solicitado, deportado, bool(tipo_registro))
     )
 
@@ -797,6 +1209,9 @@ def fila_a_payload(
         "edad": "" if edad is None else str(edad),
         "tipo_doc": tipo_doc,
         "documento": documento,
+        "jefe_tipo_doc": jefe_tipo_doc,
+        "jefe_documento": jefe_documento,
+        "parentesco_jefe": parentesco_jefe,
         "sexo": normalizar_sexo(pick(row, "sexo", "genero", "género")),
         "telefono": texto(
             pick(
@@ -923,14 +1338,13 @@ def main() -> int:
         raise SystemExit("--timeout-nexus debe ser mayor que 0")
     if args.solo_cache_nexus and not args.con_nexus:
         raise SystemExit("--solo-cache-nexus requiere --con-nexus")
-    if args.solo_marcar_siipol and not args.aplicar:
-        raise SystemExit("--solo-marcar-siipol requiere --aplicar")
     if args.reconciliar_siipol and args.solo_marcar_siipol:
         raise SystemExit("--reconciliar-siipol y --solo-marcar-siipol son excluyentes")
 
     dry = args.dry_run or not args.aplicar
     print(f"Excel: leyendo {args.archivo.name}…", file=sys.stderr, flush=True)
     rows, hoja_datos, columnas = leer_filas(args.archivo)
+    cargar_apellidos_conocidos(rows)
     print(
         f"Excel: hoja «{hoja_datos}» · {len(rows)} filas · {len(columnas)} columnas",
         file=sys.stderr,
@@ -991,6 +1405,7 @@ def main() -> int:
         "nexus_error": 0,
         "nexus_omitidas_circuit_breaker": 0,
         "nexus_omitidas_solo_cache": 0,
+        "nexus_omitidas_doc_invalido": 0,
         "solicitados": 0,
         "registro_policial": 0,
         "verificados_siipol": 0,
@@ -1002,7 +1417,13 @@ def main() -> int:
             conteos["con_cedula"] += 1
         else:
             conteos["sin_cedula"] += 1
-        payload, error = fila_a_payload(row, centros, args.centro_id, args.col_centro)
+        payload, error = fila_a_payload(
+            row,
+            centros,
+            args.centro_id,
+            args.col_centro,
+            ignorar_centro=args.solo_marcar_siipol,
+        )
         if error:
             errores.append(error)
             continue
@@ -1018,11 +1439,24 @@ def main() -> int:
     fichas_nuevas: dict[tuple[str, str], dict[str, Any]] = {}
     candidatos: set[tuple[str, str]] = set()
     if args.con_nexus:
+        omitidas_doc_invalido = 0
         for payload in preparadas:
             tipo_doc = texto(payload.get("tipo_doc")).upper()
             documento = texto(payload.get("documento"))
-            if tipo_doc in LETRAS_NEXUS and documento:
-                candidatos.add((tipo_doc, documento))
+            if tipo_doc not in LETRAS_NEXUS or not documento:
+                continue
+            # V/E consultable: 6–8 dígitos; basura (9+, 00000, etc.) no va a Nexus.
+            if len(documento) < 6 or len(documento) > 8 or set(documento) <= {"0"}:
+                omitidas_doc_invalido += 1
+                continue
+            candidatos.add((tipo_doc, documento))
+        if omitidas_doc_invalido:
+            conteos["nexus_omitidas_doc_invalido"] = omitidas_doc_invalido
+            print(
+                f"Nexus: {omitidas_doc_invalido} cédulas con formato inválido omitidas",
+                file=sys.stderr,
+                flush=True,
+            )
 
         print("Nexus: cargando verificaciones existentes…", file=sys.stderr, flush=True)
         cache_persistente = cargar_cache_nexus(url, anon, jwt)
@@ -1045,6 +1479,11 @@ def main() -> int:
             )
 
         if pendientes:
+            jwt_ref = {"token": jwt}
+
+            def flush_incremental(lote: dict[tuple[str, str], dict[str, Any]]) -> None:
+                jwt_ref["token"] = guardar_cache_nexus(url, anon, jwt_ref["token"], lote)
+
             fichas_nuevas, nexus_errores, omitidas = consultar_nexus_concurrente(
                 gateway,
                 jwt,
@@ -1053,13 +1492,14 @@ def main() -> int:
                 args.rate,
                 args.circuit_breaker,
                 args.timeout_nexus,
+                flush_fichas=flush_incremental,
             )
+            jwt = jwt_ref["token"]
             conteos["nexus_consultadas"] = len(fichas_nuevas) + len(nexus_errores)
             conteos["nexus_verificadas_nuevas"] = len(fichas_nuevas)
             conteos["nexus_omitidas_circuit_breaker"] = omitidas
-            # El dry-run evita importar censo, pero la verificación Nexus se
-            # persiste: la confirmación posterior nunca repite estas consultas.
-            guardar_cache_nexus(url, anon, jwt, fichas_nuevas)
+            # Flush incremental ya persistió; noop por si quedó cola.
+            jwt = guardar_cache_nexus(url, anon, jwt, {})
 
         fichas_disponibles = {**cache_persistente, **fichas_nuevas}
         for payload in preparadas:
@@ -1184,6 +1624,7 @@ def main() -> int:
                 "censo_marcar_siipol_lote",
                 {"p_filas": chunk, "p_fuente": args.archivo.name},
             )
+            result = resultado_siipol
             if isinstance(resultado_siipol, dict):
                 marcados_siipol += int(resultado_siipol.get("marcados_siipol") or 0)
         print(f"Lote {i // args.lote + 1}: {result}", file=sys.stderr)
