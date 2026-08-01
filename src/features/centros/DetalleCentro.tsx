@@ -43,7 +43,10 @@ import {
   TarjetaContacto,
   TarjetaSeguridad,
 } from "@/features/centros/LevantamientoCentro";
-import { AlertasDelDiaCentro } from "@/features/centros/AlertasDelDiaCentro";
+import {
+  AlertasDelDiaCentro,
+  type VistaFichaCentro,
+} from "@/features/centros/AlertasDelDiaCentro";
 import { ListaRequerimientos } from "@/features/centros/RequerimientosCentro";
 import { ListaResponsablesCoordinacion } from "@/features/centros/ResponsablesCoordinacion";
 import { GraficoOcupacionCentro } from "@/features/centros/GraficoOcupacionCentro";
@@ -94,6 +97,8 @@ interface Props {
   centro: CentroTransitorio;
   puedeEditar: boolean;
   onEditar: () => void;
+  /** Navegar a una sección de la ficha (tarjetas de alerta clicables). */
+  onIrAPestana?: (vista: VistaFichaCentro) => void;
 }
 
 const ETIQUETA_SEMAFORO: Record<string, string> = {
@@ -738,7 +743,7 @@ export function SeccionNotasCentro({ centro }: SeccionProps) {
  * Ficha de detalle de un centro (panel lateral): compone las secciones
  * reutilizables en una sola columna, igual que siempre.
  */
-export function DetalleCentro({ centro, puedeEditar, onEditar }: Props) {
+export function DetalleCentro({ centro, puedeEditar, onEditar, onIrAPestana }: Props) {
   const c = normalizarCentro(centro);
   return (
     <div className="space-y-4">
@@ -754,7 +759,7 @@ export function DetalleCentro({ centro, puedeEditar, onEditar }: Props) {
         <BadgesEstadoCentro centro={centro} />
       </div>
 
-      <AlertasDelDiaCentro centro={centro} />
+      <AlertasDelDiaCentro centro={centro} onIrAPestana={onIrAPestana} />
 
       <SeccionIdentificacionCentro centro={centro} />
       <div>

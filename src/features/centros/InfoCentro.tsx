@@ -19,6 +19,7 @@ import {
 import { useAlojamientosCentro } from "@/data/useAlojamientosCentro";
 import { BarraCensoVsParteMini } from "@/features/censo/ContrasteCensoParte";
 import { BarraReporteDiarioMini } from "./BarraReporteDiarioMini";
+import { AlertasCriticasMapa } from "./AlertasCriticasMapa";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,8 @@ interface Props {
   detalleAbierto?: boolean;
   /** Alternar (abrir/cerrar) el panel de detalle completo del centro. */
   onToggleDetalle?: () => void;
+  /** Navegación SPA (popup MapLibre está fuera del Router). */
+  onNavegar?: (ruta: string) => void;
 }
 
 /**
@@ -66,7 +69,13 @@ function fmtKpi(n: number | null): string {
 }
 
 /** Ficha básica de un centro transitorio: cuerpo asignado, ubicación y estado. */
-export function InfoCentro({ centro, className, detalleAbierto, onToggleDetalle }: Props) {
+export function InfoCentro({
+  centro,
+  className,
+  detalleAbierto,
+  onToggleDetalle,
+  onNavegar,
+}: Props) {
   const metaUnidad = metaUnidadSebinCentro(centro);
   const analisis = analisisCentro(centro);
   const centroNormalizado = normalizarCentro(centro);
@@ -215,6 +224,8 @@ export function InfoCentro({ centro, className, detalleAbierto, onToggleDetalle 
       />
 
       <BarraReporteDiarioMini centroId={centro.id} className="border-t border-border/60 pt-2" />
+
+      <AlertasCriticasMapa centroId={centro.id} onNavegar={onNavegar} />
 
       <div className="flex gap-2 pt-1">
         <Button asChild variant="outline" size="sm" className="flex-1">

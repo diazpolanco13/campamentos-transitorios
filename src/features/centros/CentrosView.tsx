@@ -287,6 +287,7 @@ export function CentrosView() {
               idsResaltadosAmbito={idsResaltadosAmbito}
               detalleAbierto={detalleAbierto}
               onToggleDetalle={toggleDetalle}
+              onNavegar={(ruta) => navigate(ruta)}
               onExportar={() => void exportarVista()}
               exportando={exportando}
             />
@@ -346,6 +347,13 @@ export function CentrosView() {
               centro={centroSel}
               puedeEditar={puedeEditar}
               onEditar={() => navigate(`/centro/${centroSel.id}?vista=coordinacion`)}
+              onIrAPestana={(vista) =>
+                navigate(
+                  vista === "resumen"
+                    ? `/centro/${centroSel.id}`
+                    : `/centro/${centroSel.id}?vista=${vista}`,
+                )
+              }
             />
           </PanelFlotante>
         )}

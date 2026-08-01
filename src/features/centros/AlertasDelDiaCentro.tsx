@@ -1,10 +1,13 @@
-// Tarjetas de seguimiento del día: reporte, salud, trabajos y déficit de infraestructura.
+// Tarjetas de seguimiento del día: reporte, salud, novedades, denuncias,
+// trabajos y déficit de infraestructura.
 
 import { useMemo } from "react";
 import {
   ClipboardCheck,
   HardHat,
+  MessageSquareWarning,
   Stethoscope,
+  ThumbsDown,
   TriangleAlert,
   Wrench,
 } from "lucide-react";
@@ -13,6 +16,7 @@ import { useReportesCentros } from "@/data/useReportesCentros";
 import { useReportesControlDia } from "@/data/useReportesControlDia";
 import { useEventosReportes } from "@/data/useEventosReportes";
 import { useCasosSaludCentros } from "@/data/useCasosSaludCentros";
+import { useDenuncias } from "@/data/useDenuncias";
 import { useOcupacionesCentros } from "@/data/useOcupacionesCentros";
 import { useReparacionesCentros } from "@/data/useReparacionesCentros";
 import { alertasCentro } from "@/domain/capacidadCentros";
@@ -89,7 +93,7 @@ function TarjetaAlerta({
   );
 }
 
-/** Cuatro alertas clicables: reporte hoy, salud, trabajos y déficit de infraestructura. */
+/** Alertas clicables del día: reporte, salud, novedades, denuncias, trabajos, infra. */
 export function AlertasDelDiaCentro({ centro, onIrAPestana }: Props) {
   const hoy = useMemo(() => claveDia(Date.now()), []);
   const desde = useMemo(() => {
@@ -104,6 +108,7 @@ export function AlertasDelDiaCentro({ centro, onIrAPestana }: Props) {
   const { eventos } = useEventosReportes({ centroId: centro.id, desde });
   const snapshots = useOcupacionesCentros({ centroId: centro.id, desde });
   const { casos } = useCasosSaludCentros({ centroId: centro.id, soloActivos: true });
+  const denunciasAbiertas = useDenuncias({ centroId: centro.id, estado: "abierta" });
   const { trabajos } = useReparacionesCentros({ centroId: centro.id, soloActivos: true });
 
   const reporteHoy = reporteDelDia(reportes, centro.id, hoy);
@@ -144,6 +149,23 @@ export function AlertasDelDiaCentro({ centro, onIrAPestana }: Props) {
       ? `${casosActivos.length} caso${casosActivos.length === 1 ? "" : "s"} activo${casosActivos.length === 1 ? "" : "s"}`
       : "Sin casos activos";
 
+  const novedadesNegativasHoy = eventosHoy.filter((e) => e.tipo === "negativo");
+  const novedadAlerta = novedadesNegativasHoy.length > 0;
+  const detalleNovedad = novedadAlerta
+    ? novedadesNegativasHoy.length === 1
+      ? novedadesNegativasHoy[0].titulo?.trim() || "1 novedad negativa"
+      : `${novedadesNegativasHoy.length} novedades negativas`
+    : "Sin novedades negativas hoy";
+
+  const denunciaAlerta = denunciasAbiertas.length > 0;
+  const detalleDenuncia = denunciaAlerta
+    ? denunciasAbiertas.length === 1
+      ? denunciasAbiertas[0].titulo?.trim() ||
+        denunciasAbiertas[0].texto?.trim() ||
+        "1 denuncia abierta"
+      : `${denunciasAbiertas.length} denuncias abiertas`
+    : "Sin denuncias abiertas";
+
   const trabajosPendientes = reparacionesPendientes(trabajos);
   const trabajosAlerta = trabajosPendientes.length > 0;
   const detalleTrabajos =
@@ -165,7 +187,7 @@ export function AlertasDelDiaCentro({ centro, onIrAPestana }: Props) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       <TarjetaAlerta
         titulo="Reporte hoy"
         icono={<ClipboardCheck className="size-4" />}
@@ -181,6 +203,22 @@ export function AlertasDelDiaCentro({ centro, onIrAPestana }: Props) {
         alerta={saludAlerta}
         colorAlerta="#ef4444"
         onClick={onIrAPestana ? () => onIrAPestana("incidencias") : undefined}
+      />
+      <TarjetaAlerta
+        titulo="Novedades neg."
+        icono={<ThumbsDown className="size-4" />}
+        detalle={detalleNovedad}
+        alerta={novedadAlerta}
+        colorAlerta="#ef4444"
+        onClick={onIrAPestana ? () => onIrAPestana("incidencias") : undefined}
+      />
+      <TarjetaAlerta
+        titulo="Denuncias"
+        icono={<MessageSquareWarning className="size-4" />}
+        detalle={detalleDenuncia}
+        alerta={denunciaAlerta}
+        colorAlerta="#f59e0b"
+        onClick={onIrAPestana ? () => onIrAPestana("buzon") : undefined}
       />
       <TarjetaAlerta
         titulo="Trabajos"

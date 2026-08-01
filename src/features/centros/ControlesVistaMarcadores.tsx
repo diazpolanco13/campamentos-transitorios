@@ -113,6 +113,12 @@ export function PanelTogglesVistaMapa({
                   ? "Toque una o varias unidades responsables para filtrar."
                   : "Solo puntos de color por dirección SEBIN."}
       </p>
+      {vistaColor && (
+        <p className="border-t border-border/60 px-1 pt-2 text-[10px] leading-snug text-muted-foreground">
+          Base roja: novedad negativa, denuncia abierta o caso de salud. Detalle tipado en el
+          popup.
+        </p>
+      )}
     </div>
   );
 }

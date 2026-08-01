@@ -70,7 +70,12 @@ import { COLOR_NUCLEO_NEUTRO } from "@/domain/unidadesSebin";
 import { useEstadoReporteHoy, fasesCompletadasHoy } from "@/data/useEstadoReporteHoy";
 import { useEventosReportes } from "@/data/useEventosReportes";
 import { useDenuncias } from "@/data/useDenuncias";
+import { useCasosSaludCentros } from "@/data/useCasosSaludCentros";
 import { claveDia } from "@/data/reposSupabase";
+import {
+  idsCentrosConAlertaCritica,
+  mapaEtiquetasAlertaCritica,
+} from "@/domain/alertasCriticasCentro";
 import { MarcadorCentro } from "./MarcadorCentro";
 import { InfoCentro } from "./InfoCentro";
 import { ControlesMapaCentros } from "./ControlesMapaCentros";
@@ -109,6 +114,8 @@ interface Props {
   detalleAbierto: boolean;
   /** Alternar (abrir/cerrar) el panel de detalle completo del centro seleccionado. */
   onToggleDetalle?: () => void;
+  /** Navegación SPA hacia ficha (chips de alerta del popup; sin contexto Router ahí). */
+  onNavegar?: (ruta: string) => void;
   onExportar?: () => void;
   exportando?: boolean;
 }
@@ -142,6 +149,7 @@ export const CentrosMap = forwardRef<CentrosMapHandle, Props>(function CentrosMa
     idsResaltadosAmbito = null,
     detalleAbierto,
     onToggleDetalle,
+    onNavegar,
     onExportar,
     exportando,
   },
@@ -196,13 +204,29 @@ export const CentrosMap = forwardRef<CentrosMapHandle, Props>(function CentrosMa
   const hoy = useMemo(() => claveDia(Date.now()), []);
   const { eventos: eventosHoy } = useEventosReportes({ dia: hoy });
   const denunciasAbiertas = useDenuncias({ estado: "abierta" });
-  /** Campamentos con novedad negativa hoy o una denuncia sin resolver → base roja del marcador. */
-  const centrosConAlertaBase = useMemo(() => {
-    const s = new Set<string>();
-    for (const e of eventosHoy) if (e.tipo === "negativo") s.add(e.centro_id);
-    for (const d of denunciasAbiertas) s.add(d.centro_id);
-    return s;
-  }, [eventosHoy, denunciasAbiertas]);
+  const { casos: casosSaludActivos } = useCasosSaludCentros({ soloActivos: true });
+  /** Campamentos con novedad negativa hoy, denuncia abierta o caso de salud → base roja. */
+  const centrosConAlertaBase = useMemo(
+    () =>
+      idsCentrosConAlertaCritica({
+        dia: hoy,
+        eventosHoy,
+        denunciasAbiertas,
+        casosSaludActivos,
+      }),
+    [hoy, eventosHoy, denunciasAbiertas, casosSaludActivos],
+  );
+  const etiquetasAlertaPorCentro = useMemo(
+    () =>
+      mapaEtiquetasAlertaCritica({
+        dia: hoy,
+        eventosHoy,
+        denunciasAbiertas,
+        casosSaludActivos,
+        centroIds: centrosConAlertaBase,
+      }),
+    [hoy, eventosHoy, denunciasAbiertas, casosSaludActivos, centrosConAlertaBase],
+  );
 
   useEffect(() => {
     guardarModo3dCentros(modo3d);
@@ -243,8 +267,10 @@ export const CentrosMap = forwardRef<CentrosMapHandle, Props>(function CentrosMa
     idsResaltadosAmbito,
     estadoReporteHoy,
     centrosConAlertaBase,
+    etiquetasAlertaPorCentro,
     onSeleccionar,
     onToggleDetalle,
+    onNavegar,
   });
   cbRef.current = {
     centros,
@@ -258,8 +284,10 @@ export const CentrosMap = forwardRef<CentrosMapHandle, Props>(function CentrosMa
     idsResaltadosAmbito,
     estadoReporteHoy,
     centrosConAlertaBase,
+    etiquetasAlertaPorCentro,
     onSeleccionar,
     onToggleDetalle,
+    onNavegar,
   };
 
   const unidadesPresentes = useMemo(() => {
@@ -448,6 +476,7 @@ export const CentrosMap = forwardRef<CentrosMapHandle, Props>(function CentrosMa
         centro={centro}
         detalleAbierto={cbRef.current.detalleAbierto}
         onToggleDetalle={cbRef.current.onToggleDetalle}
+        onNavegar={cbRef.current.onNavegar}
       />,
     );
   }
@@ -806,6 +835,7 @@ export const CentrosMap = forwardRef<CentrosMapHandle, Props>(function CentrosMa
           }
           fasesReporteHoy={fasesCompletadasHoy(cbRef.current.estadoReporteHoy.get(c.id))}
           alertaBase={cbRef.current.centrosConAlertaBase.has(c.id)}
+          alertaBaseEtiquetas={cbRef.current.etiquetasAlertaPorCentro.get(c.id)}
           esPrueba={esCentroDePrueba(c)}
           onClick={() => cbRef.current.onSeleccionar(c.id)}
         />,
@@ -834,7 +864,7 @@ export const CentrosMap = forwardRef<CentrosMapHandle, Props>(function CentrosMa
     sincronizarMarcadores();
     aplicarVistaDefectoSiCorresponde();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [centros, seleccionado, modoMarcador, mostrarParteMarcador, mostrarEtiquetaNombre, colorearPorUnidad, unidadesFiltro, idsResaltadosAmbito, estadoReporteHoy, centrosConAlertaBase]);
+  }, [centros, seleccionado, modoMarcador, mostrarParteMarcador, mostrarEtiquetaNombre, colorearPorUnidad, unidadesFiltro, idsResaltadosAmbito, estadoReporteHoy, centrosConAlertaBase, etiquetasAlertaPorCentro]);
 
   useEffect(() => {
     const map = mapRef.current;

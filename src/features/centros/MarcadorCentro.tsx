@@ -33,8 +33,13 @@ interface Props {
    * que el operador la guardó/confirmó, no que cambió un dato real.
    */
   fasesReporteHoy?: number;
-  /** Novedad negativa reportada hoy o denuncia sin resolver en este campamento. */
+  /**
+   * Alerta crítica: novedad negativa hoy, denuncia abierta o caso de salud
+   * activo. Pinta la base roja en modo "color".
+   */
   alertaBase?: boolean;
+  /** Etiquetas tipadas de la alerta (tooltip). Vacío/omitido → copy genérico. */
+  alertaBaseEtiquetas?: string[];
   /** Campamento sandbox: muestra marca «Prueba». */
   esPrueba?: boolean;
   onClick: () => void;
@@ -79,14 +84,14 @@ function colorEstadoReporte(fases: number): string {
 
 /** Color neutro de la base cuando no hay nada que atender (gris/blanco). */
 const COLOR_BASE_NEUTRA = "#e5e7eb";
-/** Color de la base cuando hay novedad negativa hoy o una denuncia sin resolver. */
+/** Color de la base cuando hay alerta crítica (novedad / denuncia / salud). */
 const COLOR_BASE_ALERTA = "#ef4444";
 
 /**
  * Baliza del campamento: núcleo en diamante con el N.°, envuelto en un aro
  * que mide el progreso del reporte diario (n/6 fases — ver `fasesReporteHoy`).
- * La base (haz + charco) es una señal aparte: neutra por defecto, roja solo
- * si hay una novedad negativa hoy o una denuncia sin resolver (`alertaBase`).
+ * La base (haz + charco) es una señal aparte: neutra por defecto, roja si hay
+ * novedad negativa hoy, denuncia abierta o caso de salud activo (`alertaBase`).
  */
 function Baliza({
   nro,
@@ -99,7 +104,7 @@ function Baliza({
   nro: number;
   color: string;
   fasesReporteHoy: number;
-  /** Novedad negativa hoy o denuncia abierta en este campamento. */
+  /** Alerta crítica (novedad / denuncia / salud). */
   alertaBase: boolean;
   resaltado: boolean;
   seleccionado: boolean;
@@ -184,6 +189,7 @@ export function MarcadorCentro({
   semaforoColor,
   fasesReporteHoy = 0,
   alertaBase = false,
+  alertaBaseEtiquetas,
   esPrueba = false,
   onClick,
 }: Props) {
@@ -194,9 +200,13 @@ export function MarcadorCentro({
       : fasesReporteHoy >= TOTAL_FASES_REPORTE_DIA
         ? "Reporte del día abierto (completo)"
         : `Reporte del día: ${fasesReporteHoy}/${TOTAL_FASES_REPORTE_DIA} fases`;
+  const detalleAlerta =
+    alertaBaseEtiquetas && alertaBaseEtiquetas.length > 0
+      ? alertaBaseEtiquetas.join(" · ")
+      : "Alerta crítica (novedad, denuncia o salud)";
   const titulo =
     `${esPrueba ? "[PRUEBA] " : ""}${nombre} · N.° ${nro} · ${refugiados.toLocaleString("es")} damnificados · ${personalTotal.toLocaleString("es")} personal operativo · ${etiquetaReporteHoy}` +
-    (alertaBase ? " · Novedad negativa o denuncia sin resolver" : "");
+    (alertaBase ? ` · ${detalleAlerta}` : "");
   const verNombre = mostrarNombre && resaltado;
 
   const marcaPrueba = esPrueba ? (
