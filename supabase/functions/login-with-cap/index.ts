@@ -29,6 +29,47 @@ function json(body: unknown, status: number): Response {
   });
 }
 
+/**
+ * Si el login llega como cédula pelada o `op-<cédula>`, elige el username
+ * real en `perfiles`:
+ *   1. username `op-<cédula>` (canónico terreno)
+ *   2. username = cédula (altas admin legacy)
+ *   3. perfil con `cedula_norm` = cédula (supervisor/admin cuyo login es nombre)
+ * Sin match → `op-<cédula>` (fallback terreno).
+ */
+async function resolverUsernameLogin(
+  admin: SupabaseClient,
+  raw: string,
+): Promise<string> {
+  const limpio = raw.trim();
+  const cedula =
+    /^op-(\d{5,12})$/i.test(limpio)
+      ? limpio.slice(3)
+      : /^\d{5,12}$/.test(limpio)
+        ? limpio
+        : null;
+  if (!cedula) return limpio;
+
+  const candidatos = [`op-${cedula}`, cedula];
+  const { data: filas } = await admin
+    .from("perfiles")
+    .select("username")
+    .in("username", candidatos);
+  const found = new Set((filas ?? []).map((f) => f.username));
+  if (found.has(`op-${cedula}`)) return `op-${cedula}`;
+  if (found.has(cedula)) return cedula;
+
+  const { data: porCedula } = await admin
+    .from("perfiles")
+    .select("username")
+    .eq("cedula_norm", cedula)
+    .limit(1)
+    .maybeSingle();
+  if (porCedula?.username) return porCedula.username;
+
+  return `op-${cedula}`;
+}
+
 async function verificarCap(
   capToken: string,
 ): Promise<{ ok: true } | { ok: false; motivo: string }> {
@@ -183,15 +224,27 @@ Deno.serve(async (req: Request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !supabaseAnonKey) {
     return json({ error: "Auth no configurado en el servidor" }, 503);
+  }
+
+  // Resolver cédula / op-<cédula> → username real ANTES del sign-in
+  // (el token Cap es de un solo uso; no se puede reintentar).
+  let usernameAuth = username;
+  let admin: SupabaseClient | null = null;
+  if (serviceKey) {
+    admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    usernameAuth = await resolverUsernameLogin(admin, username);
   }
 
   const authClient = createClient(supabaseUrl, supabaseAnonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const email = `${username}@refugio.app`;
+  const email = `${usernameAuth}@refugio.app`;
   const { data, error } = await authClient.auth.signInWithPassword({
     email,
     password,
@@ -200,13 +253,8 @@ Deno.serve(async (req: Request) => {
   if (error) return json({ error: error.message }, 200);
   if (!data.session) return json({ error: "Login sin sesión devuelta" }, 200);
 
-  // Perfil: bloqueo de rechazados + alerta Telegram. Con service role para
-  // no depender de la RLS del propio usuario.
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (serviceKey) {
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+  // Perfil: bloqueo de rechazados + alerta Telegram.
+  if (admin) {
     const userId = data.session.user.id;
     const { data: perfil } = await admin
       .from("perfiles")
@@ -226,7 +274,7 @@ Deno.serve(async (req: Request) => {
     }
 
     await notificarLoginTelegram(admin, userId, {
-      username: perfil?.username ?? username,
+      username: perfil?.username ?? usernameAuth,
       nombre: perfil?.nombre ?? "",
       rol: perfil?.rol ?? "",
     });

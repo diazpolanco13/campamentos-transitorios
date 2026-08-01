@@ -389,26 +389,39 @@ export async function login(
   password: string,
   capToken?: string,
 ): Promise<Sesion> {
-  // Operador activado (Fase 2): puede escribir su cédula pelada en el login;
-  // se mapea a su usuario canónico `op-<cédula>`.
+  // Con Cap: el Edge `login-with-cap` resuelve cédula / `op-<cédula>` contra
+  // `perfiles` (token Cap es single-use; no reintentar aquí).
+  // Sin Cap (dev): mismo orden — primero `op-<cédula>`, luego cédula pelada.
   const limpio = username.trim();
-  const usernameEfectivo = /^\d{5,12}$/.test(limpio) ? `op-${limpio}` : limpio;
+  const esCedula = /^\d{5,12}$/.test(limpio);
 
   if (capHabilitado) {
     if (!capToken?.trim()) {
       throw new Error("Completa la verificación de seguridad");
     }
-    return loginConCap(usernameEfectivo, password, capToken.trim());
+    return loginConCap(limpio, password, capToken.trim());
   }
 
-  const email = `${usernameEfectivo}@refugio.app`;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw new Error(mensajeErrorLogin(error.message));
-  if (!data.session) throw new Error("Login sin sesión devuelta");
-  const perfil = await cargarPerfil(data.session.user.id);
-  estado = { token: data.session.access_token, user: mapearUsuario(data.session, perfil) };
-  emitir();
-  return estado;
+  const candidatos = esCedula ? [`op-${limpio}`, limpio] : [limpio];
+  let lastError: string | null = null;
+  for (const u of candidatos) {
+    const email = `${u}@refugio.app`;
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (!error && data.session) {
+      const perfil = await cargarPerfil(data.session.user.id);
+      estado = {
+        token: data.session.access_token,
+        user: mapearUsuario(data.session, perfil),
+      };
+      emitir();
+      return estado;
+    }
+    lastError = error?.message ?? "Login sin sesión devuelta";
+  }
+  throw new Error(mensajeErrorLogin(lastError));
 }
 
 /** Login vía Edge Function que verifica Cap antes de autenticar. */

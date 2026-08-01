@@ -147,15 +147,23 @@ export async function actualizarUsuario(
   if (error) throw new Error(error.message);
 
   const usernameNuevo = form.username.trim().toLowerCase();
-  if (
-    usernameOriginal != null &&
-    usernameNuevo &&
-    usernameNuevo !== usernameOriginal
-  ) {
-    await invocarEdgeFunction("update-username", {
+  const usernamePrev = (usernameOriginal ?? "").trim().toLowerCase();
+  if (usernameNuevo && usernameNuevo !== usernamePrev) {
+    const renombre = await invocarEdgeFunction<{
+      ok?: boolean;
+      username?: string;
+      error?: string;
+    }>("update-username", {
       user_id: userId,
       username: usernameNuevo,
     });
+    // Algunas respuestas 2xx traen `{ error }` en body; no tragar en silencio.
+    if (renombre?.error) throw new Error(renombre.error);
+    if (renombre?.username && renombre.username !== usernameNuevo) {
+      throw new Error(
+        `No se pudo renombrar: quedó «${renombre.username}» en lugar de «${usernameNuevo}»`,
+      );
+    }
   }
 
   if (form.password) {

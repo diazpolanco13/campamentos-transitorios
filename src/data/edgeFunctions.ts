@@ -25,5 +25,15 @@ export async function invocarEdgeFunction<T = unknown>(
     }
     throw new Error(error.message || `No se pudo invocar ${nombre}`);
   }
+  // Edge que responde 200 con `{ error }` (contrato propio): fallar aquí.
+  if (
+    data &&
+    typeof data === "object" &&
+    "error" in data &&
+    typeof (data as { error: unknown }).error === "string" &&
+    (data as { error: string }).error
+  ) {
+    throw new Error((data as { error: string }).error);
+  }
   return data as T;
 }
