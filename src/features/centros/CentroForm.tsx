@@ -118,7 +118,6 @@ type Pestana =
   | "seguridad"
   | "salud"
   | "poblacion"
-  | "novedades"
   | "requerimientos"
   | "infraestructura"
   | "contactos";
@@ -134,7 +133,6 @@ const PESTANAS: {
   { valor: "seguridad", numero: "III", titulo: "Seguridad", icono: Shield },
   { valor: "salud", numero: "IV", titulo: "Salud", icono: HeartPulse },
   { valor: "poblacion", numero: "V", titulo: "Población", icono: Users },
-  { valor: "novedades", numero: "VI", titulo: "Novedades", icono: ClipboardList },
   { valor: "requerimientos", titulo: "Requerimientos", icono: Package },
   { valor: "infraestructura", titulo: "Infraestructura y capacidad", icono: Building2 },
   { valor: "contactos", titulo: "Otros contactos", icono: Phone },
@@ -210,7 +208,6 @@ export function CentroForm({
   const [servicios, setServicios] = useState<ServiciosCentro>(base.servicios);
   const [totalAfectados, setTotalAfectados] = useState(base.total_afectados);
   const [censoEnProceso, setCensoEnProceso] = useState(base.censo_en_proceso);
-  const [novedades, setNovedades] = useState(base.novedades);
   const [requerimientos, setRequerimientos] = useState<ItemRequerimiento[]>(base.requerimientos);
   const [capacidad, setCapacidad] = useState<CapacidadCentro>(base.capacidad);
   const [censoOficial, setCensoOficial] = useState<CensoOficialCentro>(base.censo_oficial);
@@ -221,7 +218,6 @@ export function CentroForm({
     asegurarIdsResponsables(base.responsables),
   );
   const [fotoUrl, setFotoUrl] = useState(base.foto_url);
-  const [notas, setNotas] = useState(base.notas);
 
   const [subiendoFoto, setSubiendoFoto] = useState(false);
   const [errorFoto, setErrorFoto] = useState<string | null>(null);
@@ -375,7 +371,6 @@ export function CentroForm({
         servicios,
         total_afectados: totalAfectados,
         censo_en_proceso: censoEnProceso,
-        novedades: novedades.trim(),
         requerimientos: requerimientos
           .filter((r) => r.concepto.trim() && r.cantidad > 0)
           .map((r) => ({
@@ -397,7 +392,6 @@ export function CentroForm({
             funcion: r.funcion.trim(),
           })),
         foto_url: fotoUrl,
-        notas: notas.trim(),
       });
       onGuardado?.(centro.id);
       onCerrar();
@@ -971,35 +965,6 @@ export function CentroForm({
                   deshabilitado={soloLectura}
                 />
               </div>
-            </div>
-          </div>
-          )}
-
-          {/* VI · Novedades */}
-          {pestana === "novedades" && (
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="centro-novedades">Novedades relevantes</Label>
-              <Textarea
-                id="centro-novedades"
-                className="mt-1.5"
-                rows={5}
-                value={novedades}
-                disabled={soloLectura}
-                onChange={(e) => setNovedades(e.target.value)}
-                placeholder="Ej. Estamos en el proceso de censo y recolección de información…"
-              />
-            </div>
-            <div>
-              <Label htmlFor="centro-notas">Notas internas (opcional)</Label>
-              <Textarea
-                id="centro-notas"
-                className="mt-1.5"
-                rows={2}
-                value={notas}
-                disabled={soloLectura}
-                onChange={(e) => setNotas(e.target.value)}
-              />
             </div>
           </div>
           )}

@@ -48,11 +48,7 @@ import {
   type VistaFichaCentro,
 } from "@/features/centros/AlertasDelDiaCentro";
 import { ListaRequerimientos } from "@/features/centros/RequerimientosCentro";
-import { ListaResponsablesCoordinacion } from "@/features/centros/ResponsablesCoordinacion";
 import { GraficoOcupacionCentro } from "@/features/centros/GraficoOcupacionCentro";
-import { SeccionReporteDiarioCentro } from "@/features/centros/ReporteDiarioCentro";
-import { SeccionSeguimientoReportesCentro } from "@/features/centros/SeguimientoReportesCentro";
-import { SeccionInfraestructuraCentro } from "@/features/centros/InfraestructuraCentro";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -95,7 +91,6 @@ function InfoEstandar({ titulo, texto }: { titulo: string; texto: string }) {
 
 interface Props {
   centro: CentroTransitorio;
-  puedeEditar: boolean;
   onEditar: () => void;
   /** Navegar a una sección de la ficha (tarjetas de alerta clicables). */
   onIrAPestana?: (vista: VistaFichaCentro) => void;
@@ -697,57 +692,21 @@ export function SeccionServiciosCentro({ centro }: SeccionProps) {
   );
 }
 
-/** Novedades relevantes (prominentes) y notas administrativas (colapsables). */
-export function SeccionNovedadesNotasCentro({ centro }: SeccionProps) {
-  const c = normalizarCentro(centro);
-  const novedades = c.novedades?.trim();
-  const notas = c.notas?.trim();
-  if (!novedades && !notas) return null;
-
-  return (
-    <div className="space-y-3">
-      {novedades && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-          <p className="text-xs font-semibold text-foreground">Novedades relevantes</p>
-          <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{novedades}</p>
-        </div>
-      )}
-      {notas && (
-        <Collapsible>
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="group flex w-full items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted/40"
-            >
-              Notas internas
-              <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2">
-            <p className="whitespace-pre-wrap rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
-              {notas}
-            </p>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
-    </div>
-  );
-}
-
-/** @deprecated Usar `SeccionNovedadesNotasCentro`. */
-export function SeccionNotasCentro({ centro }: SeccionProps) {
-  return <SeccionNovedadesNotasCentro centro={centro} />;
-}
-
 /**
- * Ficha de detalle de un centro (panel lateral): compone las secciones
- * reutilizables en una sola columna, igual que siempre.
+ * Vista rápida del panel lateral del mapa: foto chica, cabecera, alertas del día,
+ * franja compacta (cuerpo / unidad / ubicación) y CTA a la ficha completa.
  */
-export function DetalleCentro({ centro, puedeEditar, onEditar, onIrAPestana }: Props) {
-  const c = normalizarCentro(centro);
+export function DetalleCentro({ centro, onEditar, onIrAPestana }: Props) {
+  const meta = metaCuerpoDe(centro.cuerpo);
+  const metaUnidad = metaUnidadSebinCentro(centro);
+  const ubicacion = ubicacionCentro(centro);
+
   return (
     <div className="space-y-4">
-      <SeccionFotoCentro centro={centro} />
+      <SeccionFotoCentro
+        centro={centro}
+        className="-mx-3 -mt-3 mb-0 aspect-square w-[calc(100%+1.5rem)] max-w-none rounded-none border-x-0 border-t-0"
+      />
 
       {/* Cabecera propia del panel (la vista completa tiene la suya) */}
       <div className="space-y-1.5">
@@ -761,31 +720,46 @@ export function DetalleCentro({ centro, puedeEditar, onEditar, onIrAPestana }: P
 
       <AlertasDelDiaCentro centro={centro} onIrAPestana={onIrAPestana} />
 
-      <SeccionIdentificacionCentro centro={centro} />
-      <div>
-        <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground">
-          <ClipboardList className="size-3.5" />
-          Coordinación
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            className="inline-flex items-center gap-2 rounded-full border py-0.5 pl-0.5 pr-2.5"
+            style={{ borderColor: meta.color }}
+          >
+            <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white">
+              {meta.logo ? (
+                <LogoCuerpo src={meta.logo} />
+              ) : (
+                <span className="text-sm leading-none">{meta.icono}</span>
+              )}
+            </span>
+            <span className="text-xs font-semibold text-foreground">{meta.label}</span>
+          </div>
+          {metaUnidad.clave !== "sin_asignar" && (
+            <div
+              className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5"
+              style={{ borderColor: metaUnidad.color }}
+            >
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ background: metaUnidad.color }}
+                aria-hidden
+              />
+              <span className="text-[11px] font-medium text-foreground">
+                {metaUnidad.label}
+              </span>
+            </div>
+          )}
+        </div>
+        <p className="text-xs uppercase tracking-wide text-orange-400/90">
+          {ubicacion || "Sin ubicación administrativa"}
         </p>
-        <ListaResponsablesCoordinacion responsables={c.responsables_coordinacion} />
       </div>
-      <SeccionPoblacionCentro centro={centro} />
-      <SeccionPersonalCentro centro={centro} />
-      <SeccionServiciosCentro centro={centro} />
-      <SeccionReporteDiarioCentro centro={centro} puedeEditar={puedeEditar} />
-      <SeccionSeguimientoReportesCentro centro={centro} puedeEditar={puedeEditar} />
-      <SeccionInfraestructuraCentro centro={centro} puedeEditar={puedeEditar} />
-      <SeccionHistoricoCentro centro={centro} />
-      <SeccionRequerimientosCentro centro={centro} />
-      <SeccionCapacidadCentro centro={centro} />
-      <SeccionNovedadesNotasCentro centro={centro} />
 
-      {puedeEditar && (
-        <Button className="w-full" onClick={onEditar}>
-          <Pencil className="size-4" />
-          Abrir ficha del campamento
-        </Button>
-      )}
+      <Button className="w-full" onClick={onEditar}>
+        <ExternalLink className="size-4" />
+        Abrir ficha del campamento
+      </Button>
     </div>
   );
 }

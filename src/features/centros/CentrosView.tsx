@@ -33,7 +33,6 @@ import {
   centrosVisiblesParaUsuario,
   idsCentrosResaltadosMapa,
   puedeCrearCentros,
-  puedeEscribir,
 } from "@/domain/permisos";
 import { useMapaCentros } from "@/contexts/MapaCentrosContext";
 import { EstadoError } from "@/components/skeletons";
@@ -55,7 +54,6 @@ export function CentrosView() {
   const { sesion } = useOutletContext<OutletContext>();
   const location = useLocation();
   const vista = location.pathname.includes("/tablero") ? "tablero" : "mapa";
-  const puedeEditar = puedeEscribir(sesion.user.rol);
   const puedeEliminar = puedeCrearCentros(sesion.user);
   const navigate = useNavigate();
   const {
@@ -347,11 +345,11 @@ export function CentrosView() {
             titulo={`${centroSel.nro != null ? `N.° ${centroSel.nro} · ` : ""}${centroSel.nombre}`}
             descripcion={centroSel.parroquia}
             onCerrar={() => setDetalleAbierto(false)}
+            className="md:top-[5.25rem] md:h-[calc(100%-5.25rem-0.75rem)] md:max-h-[calc(100%-5.25rem-0.75rem)] md:w-[min(100%,22rem)]"
           >
             <DetalleCentro
               centro={centroSel}
-              puedeEditar={puedeEditar}
-              onEditar={() => navigate(`/centro/${centroSel.id}?vista=coordinacion`)}
+              onEditar={() => navigate(`/centro/${centroSel.id}`)}
               onIrAPestana={(vista) =>
                 navigate(
                   vista === "resumen"
