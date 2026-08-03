@@ -78,8 +78,10 @@ import { ReporteDiarioForm } from "./ReporteDiarioForm";
 import { VisorFechaReporte } from "./VisorFechaReporte";
 import { BotonEditarSeccion } from "./EdicionSeccionCentro";
 import { DialogoEdicionNombreCentro } from "./DialogoEdicionNombreCentro";
-import { DialogoEdicionUbicacionCentro } from "./DialogoEdicionUbicacionCentro";
-import type { UbicacionAdministrativa } from "@/domain/catalogosHumanitarios";
+import {
+  DialogoEdicionUbicacionCentro,
+  type UbicacionCentroEdit,
+} from "./DialogoEdicionUbicacionCentro";
 
 interface Props {
   sesion: Sesion;
@@ -173,7 +175,7 @@ export function FichaCentroView({ sesion }: Props) {
   const [guardandoUbicacion, setGuardandoUbicacion] = useState(false);
   const [errorUbicacion, setErrorUbicacion] = useState<string | null>(null);
   /** Ubicación local tras guardar: no esperar Realtime para el texto del resumen. */
-  const [ubicacionLocal, setUbicacionLocal] = useState<UbicacionAdministrativa | null>(null);
+  const [ubicacionLocal, setUbicacionLocal] = useState<UbicacionCentroEdit | null>(null);
   /** Progreso del formulario integrado (evita badge stale hasta que llegue Realtime). */
   const [progresoFormulario, setProgresoFormulario] = useState<{
     completas: number;
@@ -223,10 +225,21 @@ export function FichaCentroView({ sesion }: Props) {
 
   useEffect(() => {
     if (!centro || ubicacionLocal == null) return;
+    const geomLocal = ubicacionLocal.geom;
+    const geomCentro = centro.geom ?? null;
+    const mismaGeom =
+      (geomLocal == null && geomCentro == null) ||
+      (geomLocal != null &&
+        geomCentro != null &&
+        geomLocal.coordinates[0] === geomCentro.coordinates[0] &&
+        geomLocal.coordinates[1] === geomCentro.coordinates[1]);
     if (
       (centro.estado_federativo ?? "") === ubicacionLocal.estado_federativo &&
       (centro.municipio ?? "") === ubicacionLocal.municipio &&
-      (centro.parroquia ?? "") === ubicacionLocal.parroquia
+      (centro.parroquia ?? "") === ubicacionLocal.parroquia &&
+      (centro.direccion ?? "").trim() === ubicacionLocal.direccion &&
+      (centro.mapsUrl ?? "").trim() === ubicacionLocal.mapsUrl &&
+      mismaGeom
     ) {
       setUbicacionLocal(null);
     }
@@ -421,7 +434,7 @@ export function FichaCentroView({ sesion }: Props) {
     }
   }
 
-  async function guardarUbicacionCentro(ubicacion: UbicacionAdministrativa) {
+  async function guardarUbicacionCentro(ubicacion: UbicacionCentroEdit) {
     if (!centro) return;
     setGuardandoUbicacion(true);
     setErrorUbicacion(null);
@@ -431,6 +444,9 @@ export function FichaCentroView({ sesion }: Props) {
         estado_federativo: ubicacion.estado_federativo,
         municipio: ubicacion.municipio,
         parroquia: ubicacion.parroquia,
+        direccion: ubicacion.direccion,
+        mapsUrl: ubicacion.mapsUrl,
+        geom: ubicacion.geom,
       });
       setUbicacionLocal(ubicacion);
       setEditandoUbicacion(false);

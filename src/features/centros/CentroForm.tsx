@@ -5,8 +5,8 @@ import {
   ClipboardList,
   HeartPulse,
   Loader2,
-  LocateFixed,
   MapPin,
+  MapPinned,
   Package,
   Pencil,
   Phone,
@@ -58,6 +58,7 @@ import { AccionesContacto } from "@/components/AccionesContacto";
 import { SelectoresGeo } from "@/components/SelectoresGeo";
 import { ZonaSubidaImagen } from "@/components/ZonaSubidaImagen";
 import { normalizarUbicacionCentro } from "@/domain/catalogosHumanitarios";
+import { MapaGeolocalizacionCentro } from "@/features/terreno/MapaGeolocalizacionCentro";
 import { VistaEncabezado } from "@/components/VistaEncabezado";
 import { ANCHO_VISTA_PRINCIPAL, MarcoVista } from "@/components/VistaContenedor";
 import { Badge } from "@/components/ui/badge";
@@ -120,7 +121,8 @@ type Pestana =
   | "poblacion"
   | "requerimientos"
   | "infraestructura"
-  | "contactos";
+  | "contactos"
+  | "ubicacion";
 
 const PESTANAS: {
   valor: Pestana;
@@ -136,6 +138,7 @@ const PESTANAS: {
   { valor: "requerimientos", titulo: "Requerimientos", icono: Package },
   { valor: "infraestructura", titulo: "Infraestructura y capacidad", icono: Building2 },
   { valor: "contactos", titulo: "Otros contactos", icono: Phone },
+  { valor: "ubicacion", titulo: "Ubicación", icono: MapPinned },
 ];
 
 /**
@@ -197,7 +200,6 @@ export function CentroForm({
   const [lngTexto, setLngTexto] = useState(
     base.geom ? String(base.geom.coordinates[0]) : "",
   );
-  const [buscandoGps, setBuscandoGps] = useState(false);
   const [errorCoords, setErrorCoords] = useState<string | null>(null);
   const [fechaLevantamiento, setFechaLevantamiento] = useState(base.fecha_levantamiento);
   const [estadoFederativo, setEstadoFederativo] = useState(ubiInicial.estado_federativo);
@@ -265,26 +267,14 @@ export function CentroForm({
     return { type: "Point", coordinates: [lng, lat] };
   }
 
-  function usarGps() {
-    if (!navigator.geolocation) {
-      setErrorCoords("Tu navegador no soporta geolocalización (GPS).");
-      return;
-    }
-    setErrorCoords(null);
-    setBuscandoGps(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLatTexto(pos.coords.latitude.toFixed(6));
-        setLngTexto(pos.coords.longitude.toFixed(6));
-        setBuscandoGps(false);
-      },
-      () => {
-        setErrorCoords("No se pudo obtener tu ubicación. Revisa los permisos del navegador.");
-        setBuscandoGps(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000 },
-    );
-  }
+  const latMapa = (() => {
+    const n = Number(latTexto.trim().replace(",", "."));
+    return Number.isFinite(n) && Math.abs(n) <= 90 ? n : null;
+  })();
+  const lngMapa = (() => {
+    const n = Number(lngTexto.trim().replace(",", "."));
+    return Number.isFinite(n) && Math.abs(n) <= 180 ? n : null;
+  })();
 
   async function subirFoto(file: File) {
     setErrorFoto(null);
@@ -309,7 +299,7 @@ export function CentroForm({
     }
     const geom = parsearCoordenadas();
     if (geom === "error") {
-      setPestana("identificacion");
+      setPestana("ubicacion");
       setErrorGuardado(
         "Coordenadas inválidas: revisa latitud y longitud (ej. 10.48061 y -66.90360).",
       );
@@ -635,24 +625,6 @@ export function CentroForm({
             </div>
 
             <div>
-              <Label className="mb-1.5 block">Ubicación administrativa</Label>
-              <SelectoresGeo
-                pais="Venezuela"
-                estado={estadoFederativo}
-                municipio={municipio}
-                parroquia={parroquia}
-                onPaisChange={() => {}}
-                onEstadoChange={setEstadoFederativo}
-                onMunicipioChange={setMunicipio}
-                onParroquiaChange={setParroquia}
-                disabled={soloLectura}
-                mostrarPais={false}
-                paisBloqueado
-                soloEstadosMetropolitanos
-              />
-            </div>
-
-            <div>
               <Label htmlFor="centro-nombre">Nombre del campamento</Label>
               <Input
                 id="centro-nombre"
@@ -696,90 +668,6 @@ export function CentroForm({
                 setSupervision((prev) => ({ ...prev, ...patch }))
               }
             />
-
-            <div>
-              <Label htmlFor="centro-direccion">Dirección</Label>
-              <Textarea
-                id="centro-direccion"
-                className="mt-1.5"
-                rows={2}
-                value={direccion}
-                disabled={soloLectura}
-                onChange={(e) => setDireccion(e.target.value)}
-                placeholder="Av. Intercomunal de El Valle, Caracas…"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="centro-maps">Enlace de Google Maps (opcional)</Label>
-              <Input
-                id="centro-maps"
-                className="mt-1.5"
-                type="url"
-                value={mapsUrl}
-                disabled={soloLectura}
-                onChange={(e) => setMapsUrl(e.target.value)}
-                placeholder="https://maps.app.goo.gl/…"
-              />
-            </div>
-
-            <div>
-              <Label>Ubicación en el mapa (coordenadas)</Label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Latitud y longitud en grados decimales (ej. 10.48061, -66.90360). Sin
-                coordenadas, el campamento no aparece en el mapa.
-              </p>
-              <div className="mt-2 flex items-end gap-2">
-                <div className="flex-1">
-                  <Label htmlFor="centro-lat" className="text-[11px] text-muted-foreground">
-                    Latitud
-                  </Label>
-                  <Input
-                    id="centro-lat"
-                    className="mt-1 font-mono text-xs"
-                    inputMode="decimal"
-                    value={latTexto}
-                    disabled={soloLectura}
-                    onChange={(e) => setLatTexto(e.target.value)}
-                    placeholder="10.48061"
-                  />
-                </div>
-                <div className="flex-1">
-                  <Label htmlFor="centro-lng" className="text-[11px] text-muted-foreground">
-                    Longitud
-                  </Label>
-                  <Input
-                    id="centro-lng"
-                    className="mt-1 font-mono text-xs"
-                    inputMode="decimal"
-                    value={lngTexto}
-                    disabled={soloLectura}
-                    onChange={(e) => setLngTexto(e.target.value)}
-                    placeholder="-66.90360"
-                  />
-                </div>
-                {!soloLectura && (
-                  <Button
-                    type="button"
-                    size="lg"
-                    variant="outline"
-                    disabled={buscandoGps}
-                    onClick={usarGps}
-                    title="Usar mi ubicación actual (GPS)"
-                  >
-                    {buscandoGps ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <LocateFixed className="size-4" />
-                    )}
-                    GPS
-                  </Button>
-                )}
-              </div>
-              {errorCoords && (
-                <p className="mt-1 text-[11px] text-destructive">{errorCoords}</p>
-              )}
-            </div>
 
             <div>
               <Label>Foto del campamento</Label>
@@ -1007,6 +895,115 @@ export function CentroForm({
               puedeEditar={!soloLectura}
               esNuevo={esNuevo}
             />
+          </div>
+          )}
+
+          {/* Ubicación administrativa + mapa */}
+          {pestana === "ubicacion" && (
+          <div className="space-y-5">
+            <div>
+              <Label className="mb-1.5 block">Ubicación administrativa</Label>
+              <SelectoresGeo
+                pais="Venezuela"
+                estado={estadoFederativo}
+                municipio={municipio}
+                parroquia={parroquia}
+                onPaisChange={() => {}}
+                onEstadoChange={setEstadoFederativo}
+                onMunicipioChange={setMunicipio}
+                onParroquiaChange={setParroquia}
+                disabled={soloLectura}
+                mostrarPais={false}
+                paisBloqueado
+                soloEstadosMetropolitanos
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="centro-direccion">Dirección</Label>
+              <Textarea
+                id="centro-direccion"
+                className="mt-1.5"
+                rows={2}
+                value={direccion}
+                disabled={soloLectura}
+                onChange={(e) => setDireccion(e.target.value)}
+                placeholder="Av. Intercomunal de El Valle, Caracas…"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="centro-maps">Enlace de Google Maps (opcional)</Label>
+              <Input
+                id="centro-maps"
+                className="mt-1.5"
+                type="url"
+                value={mapsUrl}
+                disabled={soloLectura}
+                onChange={(e) => setMapsUrl(e.target.value)}
+                placeholder="https://maps.app.goo.gl/…"
+              />
+            </div>
+
+            <div>
+              <Label>Ubicación en el mapa</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Coloca el pin o usa GPS. Sin coordenadas el campamento no aparece en el mapa.
+              </p>
+              {!soloLectura ? (
+                <div className="mt-2">
+                  <MapaGeolocalizacionCentro
+                    altura="h-56 min-h-[14rem] sm:h-64"
+                    lat={latMapa}
+                    lng={lngMapa}
+                    onChange={(lat, lng) => {
+                      setLatTexto(lat.toFixed(6));
+                      setLngTexto(lng.toFixed(6));
+                      setErrorCoords(null);
+                    }}
+                  />
+                </div>
+              ) : null}
+              <div className="mt-2 flex items-end gap-2">
+                <div className="flex-1">
+                  <Label htmlFor="centro-lat" className="text-[11px] text-muted-foreground">
+                    Latitud
+                  </Label>
+                  <Input
+                    id="centro-lat"
+                    className="mt-1 font-mono text-xs"
+                    inputMode="decimal"
+                    value={latTexto}
+                    disabled={soloLectura}
+                    onChange={(e) => {
+                      setLatTexto(e.target.value);
+                      setErrorCoords(null);
+                    }}
+                    placeholder="10.48061"
+                  />
+                </div>
+                <div className="flex-1">
+                  <Label htmlFor="centro-lng" className="text-[11px] text-muted-foreground">
+                    Longitud
+                  </Label>
+                  <Input
+                    id="centro-lng"
+                    className="mt-1 font-mono text-xs"
+                    inputMode="decimal"
+                    value={lngTexto}
+                    disabled={soloLectura}
+                    onChange={(e) => {
+                      setLngTexto(e.target.value);
+                      setErrorCoords(null);
+                    }}
+                    placeholder="-66.90360"
+                  />
+                </div>
+              </div>
+              {errorCoords && (
+                <p className="mt-1 text-[11px] text-destructive">{errorCoords}</p>
+              )}
+            </div>
           </div>
           )}
 

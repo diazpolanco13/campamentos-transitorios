@@ -302,14 +302,17 @@ export function SeccionIdentificacionCentro({
               variant="ghost"
               size="icon-sm"
               className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-              title="Editar ubicación administrativa"
-              aria-label="Editar ubicación administrativa"
+              title="Editar ubicación"
+              aria-label="Editar ubicación"
               onClick={onEditarUbicacion}
             >
               <Pencil className="size-3.5" />
             </Button>
           )}
         </div>
+        {!centro.geom && (
+          <p className="text-[11px] text-amber-400/90">Sin coordenadas en el mapa</p>
+        )}
         {centro.direccion && <p className="leading-snug">{centro.direccion}</p>}
         {c.censo_oficial.ministerio_ente.trim() && (
           <p>
