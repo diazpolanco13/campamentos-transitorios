@@ -12,6 +12,8 @@ export type CameraState = {
   focusedUnidad: boolean;
   selectedKind?: "campamento" | "unidad" | "sebin" | null;
   selectedNodePos?: Pt | null;
+  /** Posición layout de la unidad en foco (centrado horizontal). */
+  focusUnidadPos?: Pt | null;
   focusCenter?: Pt | null;
   focusBounds?: Bounds | null;
 };
@@ -19,6 +21,11 @@ export type CameraState = {
 const ZOOM_NODE = 0.42;
 const ZOOM_FOCUS = 0.78;
 const ZOOM_OUT_PAD = 0.06;
+/**
+ * Ancla el borde inferior del árbol cerca del bottom, con margen para que
+ * SEBIN (nodo principal) no quede cortado.
+ */
+const TREE_BOTTOM_SCREEN_Y = 0.86;
 
 const round2 = (n: number): number => {
   const v = Math.round(n * 100) / 100;
@@ -73,17 +80,20 @@ export function cameraRect(view: ViewSize, s: CameraState): Rect {
     return frameOn(view, s.selectedNodePos, ZOOM_NODE);
   }
   if (s.focusedUnidad) {
-    // prioriza centro en la unidad (eje vertical mid-pantalla)
-    if (s.focusBounds && s.focusCenter) {
+    const unidad =
+      s.focusUnidadPos ??
+      (s.selectedKind === "unidad" ? s.selectedNodePos : null);
+    // Árbol bajado: SEBIN entero cerca del borde; unidad y vínculos arriba
+    if (s.focusBounds) {
       const framed = frameBounds(view, s.focusBounds, 0.08);
-      // re-centrar horizontal/vertical en focusCenter (tronco al medio)
+      const cx = unidad?.x ?? s.focusCenter?.x ?? (s.focusBounds.minX + s.focusBounds.maxX) / 2;
       return {
         ...framed,
-        x: round2(s.focusCenter.x - framed.w / 2),
-        y: round2(s.focusCenter.y - framed.h / 2),
+        x: round2(cx - framed.w / 2),
+        y: round2(s.focusBounds.maxY - framed.h * TREE_BOTTOM_SCREEN_Y),
       };
     }
-    if (s.focusBounds) return frameBounds(view, s.focusBounds, 0.08);
+    if (unidad) return frameOn(view, unidad, ZOOM_FOCUS);
     if (s.focusCenter) return frameOn(view, s.focusCenter, ZOOM_FOCUS);
   }
   if (s.selectedNodePos) return frameOn(view, s.selectedNodePos, ZOOM_NODE);
@@ -113,3 +123,5 @@ export function lerpRect(cur: Rect, target: Rect, t: number): Rect {
 
 export const CAM_EASE = 0.055;
 export const CAM_EASE_HOME = 0.045;
+/** Entrada overview → unidad: un poco más lento. */
+export const CAM_EASE_ENTER_FOCUS = 0.018;

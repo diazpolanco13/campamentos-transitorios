@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Network, Siren, X } from "lucide-react";
+import { Inbox, Siren } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { Sesion } from "@/data/authSupabase";
 import { useSupabaseQuery } from "@/data/useSupabaseQuery";
 import { useOcupacionesCentros } from "@/data/useOcupacionesCentros";
@@ -14,33 +15,70 @@ import { aplicarPartesActualesACentros } from "@/domain/parteActualCentros";
 import {
   centrosDeProduccion,
   idCentroEsPrueba,
+  unidadSebinDe,
   type CentroTransitorio,
+  type ClaveUnidadSebin,
 } from "@/domain/centrosTransitorios";
 import { centrosEnAlcanceUsuario, centrosVisiblesParaUsuario } from "@/domain/permisos";
 import { idsCentrosConAlertaCritica } from "@/domain/alertasCriticasCentro";
 import {
   buildSebinBrainGraph,
   estadoDesdeFases,
-  META_SEVERIDAD_BRAIN,
   type PulseCentroBrain,
   type SebinBrainNode,
 } from "@/domain/sebinBrainGraph";
+import { PanelFlotante } from "@/components/PanelFlotante";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { ControlesMapaFlotantes } from "@/features/centros/ControlesMapaFlotantes";
+import { PanelCentros, calcularEstadosFilas } from "@/features/centros/PanelCentros";
 import {
   DetalleNodoBrain,
   LeyendaSeveridadBrain,
   SebinBrainGraph,
+  type NovedadesBrainResumen,
 } from "./SebinBrainGraph";
+import { TotalesBrain } from "./TotalesBrain";
+import {
+  BotonFiltroReporteBrain,
+  campamentoPasaFiltroReporte,
+  type FiltroReporteBrain,
+} from "./FiltrosReporteBrain";
 
 type CentroFila = CentroTransitorio & { deleted: boolean };
 
 /** Grafo operativo: SEBIN → unidades → campamentos + severidad del día. */
 export function BrainView({ sesion }: { sesion: Sesion }) {
   const navegar = useNavigate();
+  const esMovil = useIsMobile();
   const hoy = claveDia(Date.now());
-  const [selectedId, setSelectedId] = useState<string | null>("sebin");
-  const [lenteCritica, setLenteCritica] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusUnidadId, setFocusUnidadId] = useState<string | null>(null);
+  const [filtrosReporte, setFiltrosReporte] = useState<Set<FiltroReporteBrain>>(
+    () => new Set(),
+  );
+  const [panelCentrosAbierto, setPanelCentrosAbierto] = useState(false);
+  const [unidadesFiltro, setUnidadesFiltro] = useState<Set<ClaveUnidadSebin>>(
+    () => new Set(),
+  );
+  const [expandidos, setExpandidos] = useState<Set<ClaveUnidadSebin>>(
+    () => new Set(),
+  );
 
   const filasCentros = useSupabaseQuery<CentroFila, FilaSync<CentroTransitorio>>(
     "centros",
@@ -94,14 +132,45 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
   );
 
   const graph = useMemo(() => {
-    if (!lenteCritica) return graphFull;
+    const hayFiltroUnidad = unidadesFiltro.size > 0;
+    const hayFiltroEstado = filtrosReporte.size > 0;
+    if (!hayFiltroEstado && !hayFiltroUnidad) return graphFull;
     const keep = new Set<string>(["sebin"]);
+    if (focusUnidadId) keep.add(focusUnidadId);
+    if (selectedId) keep.add(selectedId);
     for (const n of graphFull.nodes) {
-      if (n.kind === "campamento" && n.severidad === "critica") {
-        keep.add(n.id);
-        if (n.unidadClave) keep.add(`unidad:${n.unidadClave}`);
+      if (n.kind === "campamento") {
+        const enFiltro =
+          !hayFiltroUnidad ||
+          (n.unidadClave != null && unidadesFiltro.has(n.unidadClave));
+        const enEstado = campamentoPasaFiltroReporte(
+          n.severidad,
+          filtrosReporte,
+          n.estadoReporte,
+        );
+        if (enFiltro && enEstado) {
+          keep.add(n.id);
+          if (n.unidadClave) keep.add(`unidad:${n.unidadClave}`);
+        }
       }
-      if (n.kind === "unidad" && n.criticos > 0) keep.add(n.id);
+    }
+    // Sin filtro de estado: unidades del filtro de unidad (aunque sin camps match).
+    if (!hayFiltroEstado) {
+      for (const n of graphFull.nodes) {
+        if (n.kind !== "unidad") continue;
+        if (n.unidadClave != null && unidadesFiltro.has(n.unidadClave)) {
+          keep.add(n.id);
+        }
+      }
+    } else if (filtrosReporte.has("critica")) {
+      // Unidad con críticas agregadas (misma lógica lente anterior).
+      for (const n of graphFull.nodes) {
+        if (n.kind !== "unidad" || n.criticos <= 0) continue;
+        const enFiltro =
+          !hayFiltroUnidad ||
+          (n.unidadClave != null && unidadesFiltro.has(n.unidadClave));
+        if (enFiltro) keep.add(n.id);
+      }
     }
     return {
       ...graphFull,
@@ -110,188 +179,406 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
         (e) => keep.has(e.source) && keep.has(e.target),
       ),
     };
-  }, [graphFull, lenteCritica]);
+  }, [graphFull, filtrosReporte, unidadesFiltro, focusUnidadId, selectedId]);
 
   const selected = useMemo(
     () => graphFull.nodes.find((n) => n.id === selectedId) ?? null,
     [graphFull.nodes, selectedId],
   );
 
+  const estadosFilas = useMemo(() => calcularEstadosFilas(centros), [centros]);
+  const centroSeleccionadoId =
+    selected?.kind === "campamento" ? (selected.centroId ?? null) : null;
+
+  function alternarUnidadFiltro(clave: ClaveUnidadSebin) {
+    setUnidadesFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(clave)) next.delete(clave);
+      else next.add(clave);
+      return next;
+    });
+  }
+
+  function alternarFiltroReporte(f: FiltroReporteBrain) {
+    setFiltrosReporte((prev) => {
+      const next = new Set(prev);
+      if (next.has(f)) next.delete(f);
+      else next.add(f);
+      return next;
+    });
+  }
+
+  const lenteCritica = filtrosReporte.has("critica");
+  const hayFiltroReporteEstado =
+    filtrosReporte.has("completo") ||
+    filtrosReporte.has("parcial") ||
+    filtrosReporte.has("incompleto");
+
+  function setExpandido(clave: ClaveUnidadSebin, abierto: boolean) {
+    setExpandidos((prev) => {
+      const s = new Set(prev);
+      if (abierto) s.add(clave);
+      else s.delete(clave);
+      return s;
+    });
+  }
+
+  /** Lista/buscador → foco unidad + campamento en el grafo. */
+  function seleccionarCentroBrain(centro: CentroTransitorio) {
+    const clave = unidadSebinDe(centro);
+    setExpandido(clave, true);
+    setFocusUnidadId(`unidad:${clave}`);
+    setSelectedId(`camp:${centro.id}`);
+  }
+
+  const novedadesSelected = useMemo((): NovedadesBrainResumen | null => {
+    if (!selected) return null;
+    const eventos = eventosHoy.filter((e) => !idCentroEsPrueba(e.centro_id));
+    let scope = eventos;
+    if (selected.kind === "campamento" && selected.centroId) {
+      scope = eventos.filter((e) => e.centro_id === selected.centroId);
+    } else if (selected.kind === "unidad" && selected.unidadClave) {
+      const ids = new Set(
+        graphFull.nodes
+          .filter(
+            (n) =>
+              n.kind === "campamento" &&
+              n.unidadClave === selected.unidadClave &&
+              n.centroId,
+          )
+          .map((n) => n.centroId as string),
+      );
+      scope = eventos.filter((e) => ids.has(e.centro_id));
+    }
+    const negativas = scope.filter((e) => e.tipo === "negativo");
+    return {
+      total: scope.length,
+      negativas: negativas.length,
+      titulos: negativas
+        .slice(0, 3)
+        .map((e) => e.titulo?.trim() || "Sin título"),
+    };
+  }, [selected, eventosHoy, graphFull.nodes]);
+
   const onSelect = (node: SebinBrainNode | null) => {
     setSelectedId(node?.id ?? null);
   };
 
+  const cerrarDetalle = () => setSelectedId(null);
+
   const { resumen } = graphFull;
+  const tipoNodo =
+    selected?.kind === "sebin"
+      ? "Núcleo"
+      : selected?.kind === "unidad"
+        ? "Unidad"
+        : selected?.kind === "campamento"
+          ? "Campamento"
+          : undefined;
+
+  const panelEscritorio = Boolean(selected) && !esMovil;
+  /** Top ocupado: KPI/migas o foco — liberar zona superior del lienzo. */
+  const chromeSuperiorOcupado = Boolean(focusUnidadId) || panelEscritorio;
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden [--sebin-chrome-top:8.5rem] [--sebin-chrome-right:15.5rem] lg:[--sebin-chrome-top:6.75rem]">
+    <div
+      className={cn(
+        "relative h-full min-h-0 w-full overflow-hidden",
+        // zoom fijo top-right; debajo empieza panel/filtros
+        "[--sebin-under-zoom:3.5rem]",
+        // migas al lado de lista (KPI baja con foco/detalle)
+        "[--sebin-chrome-top:0.75rem]",
+        // panel 16rem + right-3 + gap filtros
+        panelEscritorio && "[--sebin-chrome-right:17.5rem]",
+      )}
+    >
       <SebinBrainGraph
         graph={graph}
         selectedId={selectedId}
         onSelect={onSelect}
+        focusUnidadId={focusUnidadId}
+        onFocusUnidadIdChange={setFocusUnidadId}
+        ocultarChromeFlotante={panelCentrosAbierto && esMovil}
         className="h-full w-full"
       />
 
-      {/* KPI + acciones — overlay superior */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 p-3 pr-[calc(var(--sebin-chrome-right)+0.5rem)]">
-        <div className="pointer-events-auto flex flex-col gap-2 rounded-xl border border-border/70 bg-background/80 p-3 shadow-sm backdrop-blur-md lg:flex-row lg:items-end lg:justify-between lg:gap-4">
-          <div className="min-w-0 lg:max-w-md">
-            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-              <Network className="size-3.5 shrink-0" />
-              Brain operativo
-            </div>
-            <h1 className="mt-0.5 truncate text-base font-bold tracking-tight md:text-lg">
-              SEBIN · unidades · campamentos
-            </h1>
-            <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">
-              Pulso del día {hoy}
-            </p>
-          </div>
+      {/* Mismo pill del mapa: lista/filtro + buscador → navega en el brain */}
+      <ControlesMapaFlotantes
+        centros={centros}
+        estados={estadosFilas}
+        seleccionado={centroSeleccionadoId}
+        onSeleccionarCentro={seleccionarCentroBrain}
+        panelAbierto={panelCentrosAbierto}
+        onAbrirPanel={() => setPanelCentrosAbierto(true)}
+      />
 
-          <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4 lg:max-w-xl">
-            <KpiChip label="Campamentos" valor={resumen.camps} />
-            <KpiChip label="Unidades" valor={resumen.unidades} />
-            <KpiChip
-              label="Reportes OK"
-              valor={`${resumen.reportesOk}/${resumen.camps}`}
-              tono="ok"
-            />
-            <KpiChip
-              label="Críticos hoy"
-              valor={resumen.criticos}
-              tono={resumen.criticos > 0 ? "critica" : "muted"}
-            />
-          </div>
+      <PanelCentros
+        centros={centros}
+        unidadesFiltro={unidadesFiltro}
+        onAlternarUnidad={alternarUnidadFiltro}
+        onLimpiarFiltro={() => setUnidadesFiltro(new Set())}
+        expandidos={expandidos}
+        onSetExpandido={setExpandido}
+        seleccionado={centroSeleccionadoId}
+        onSeleccionarCentro={seleccionarCentroBrain}
+        abierto={panelCentrosAbierto}
+        onCambiarAbierto={setPanelCentrosAbierto}
+      />
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant={lenteCritica ? "default" : "outline"}
-              size="sm"
-              onClick={() => setLenteCritica((v) => !v)}
-            >
-              <Siren className="size-3.5" />
-              Solo críticas
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => navegar("/incidencias/funcionarios")}
-            >
-              Bandeja
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Detalle — siempre lateral derecho, compacto */}
-      <aside className="absolute bottom-3 right-3 top-3 z-30 flex w-[14.5rem] flex-col overflow-hidden rounded-xl border border-border/70 bg-background/85 shadow-sm backdrop-blur-md">
-        <div className="flex items-center justify-between gap-1 border-b border-border/60 px-2.5 py-1.5">
-          <h2 className="text-xs font-semibold">Detalle</h2>
-          {selected && (
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Cerrar detalle"
-              onClick={() => setSelectedId(null)}
-            >
-              <X className="size-3.5" />
-            </Button>
+      {/* KPIs overview: arriba izq. Con foco/detalle van al stack inferior. */}
+      {!chromeSuperiorOcupado && !(panelCentrosAbierto && esMovil) && (
+        <div
+          className={cn(
+            "map-controls-overlay pointer-events-none absolute inset-x-3 bottom-3 z-30 md:inset-x-auto md:bottom-auto md:right-36 md:top-3",
+            panelCentrosAbierto
+              ? "md:left-[calc(min(21rem,86vw)+0.75rem)]"
+              : "md:left-14",
           )}
+        >
+          <TotalesBrain resumen={resumen} />
         </div>
-        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-2.5">
-          {selected ? (
-            <>
-              <DetalleNodoBrain node={selected} dia={hoy} />
-              {selected.centroId && (
-                <div className="flex flex-col gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() =>
-                      navegar(
-                        `/centros/reportes/${selected.centroId}?vista=reporte&dia=${hoy}`,
-                      )
-                    }
-                  >
-                    Abrir reporte
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      navegar(
-                        `/centros/reportes/${selected.centroId}?vista=incidencias`,
-                      )
-                    }
-                  >
-                    Seguimiento
-                  </Button>
-                </div>
-              )}
-              {selected.kind === "unidad" && selected.criticos > 0 && (
+      )}
+
+      {/* Filtros: bajo zoom; ocultos en móvil si lista abierta */}
+      {!(panelCentrosAbierto && esMovil) && (
+      <TooltipProvider delayDuration={200}>
+        <div
+          className="map-controls-overlay pointer-events-none absolute z-30"
+          style={{
+            top: "var(--sebin-under-zoom)",
+            right: "max(0.75rem, var(--sebin-chrome-right, 0.75rem))",
+          }}
+        >
+          <ButtonGroup
+            orientation="vertical"
+            className="pointer-events-auto w-10 min-w-10 overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button
                   type="button"
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() =>
-                    navegar("/incidencias/funcionarios?estado=seguimiento")
+                  variant={lenteCritica ? "secondary" : "outline"}
+                  size="icon"
+                  className={cn(
+                    "h-10 w-10 min-w-10 shrink-0 border-0 bg-card text-foreground shadow-none hover:bg-muted/80",
+                    lenteCritica && "bg-primary/15 text-primary",
+                  )}
+                  aria-label={
+                    lenteCritica ? "Quitar filtro de críticas" : "Solo críticas"
                   }
+                  aria-pressed={lenteCritica}
+                  onClick={() => alternarFiltroReporte("critica")}
                 >
-                  Críticas en bandeja
+                  <Siren className="size-4" />
                 </Button>
-              )}
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Tocá un nodo: SEBIN, unidad o campamento.
-            </p>
+              </TooltipTrigger>
+              <TooltipContent side="left" sideOffset={8}>
+                {lenteCritica ? "Quitar críticas" : "Solo críticas"}
+              </TooltipContent>
+            </Tooltip>
+            <BotonFiltroReporteBrain
+              filtros={filtrosReporte}
+              onAlternar={alternarFiltroReporte}
+            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 min-w-10 shrink-0 border-0 bg-card text-foreground shadow-none hover:bg-muted/80"
+                  aria-label="Bandeja de críticas"
+                  onClick={() => navegar("/incidencias/funcionarios")}
+                >
+                  <Inbox className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left" sideOffset={8}>
+                Bandeja
+              </TooltipContent>
+            </Tooltip>
+          </ButtonGroup>
+        </div>
+      </TooltipProvider>
+      )}
+
+      {/* Desktop: misma columna que zoom (debajo), sin solaparse */}
+      {panelEscritorio && selected && (
+        <PanelFlotante
+          titulo={selected.label}
+          descripcion={tipoNodo}
+          onCerrar={cerrarDetalle}
+          className="z-40 md:top-[var(--sebin-under-zoom)] md:right-3 md:bottom-auto md:left-auto md:h-auto md:max-h-[min(34rem,calc(100%-var(--sebin-under-zoom)-0.75rem))] md:w-[16rem]"
+        >
+          <DetalleAccionesBrain
+            selected={selected}
+            dia={hoy}
+            novedades={novedadesSelected}
+            onAbrirReporte={() =>
+              navegar(
+                `/centros/reportes/${selected.centroId}?vista=reporte&dia=${hoy}`,
+              )
+            }
+            onAbrirSeguimiento={() =>
+              navegar(
+                `/centros/reportes/${selected.centroId}?vista=incidencias`,
+              )
+            }
+            onAbrirBandeja={() =>
+              navegar("/incidencias/funcionarios?estado=seguimiento")
+            }
+          />
+        </PanelFlotante>
+      )}
+
+      {/* Móvil: bottom sheet — grafo sigue visible arriba */}
+      <Sheet
+        open={Boolean(selected) && esMovil}
+        onOpenChange={(open) => {
+          if (!open) cerrarDetalle();
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          showCloseButton
+          className="max-h-[min(72dvh,34rem)] gap-0 rounded-t-2xl p-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
+        >
+          <div className="flex justify-center pt-2" aria-hidden>
+            <div className="h-1 w-10 rounded-full bg-muted-foreground/35" />
+          </div>
+          <SheetHeader className="border-b border-border/60 px-4 pb-3 pt-2 text-left">
+            <SheetTitle className="truncate pr-8">
+              {selected?.label ?? "Detalle"}
+            </SheetTitle>
+            {tipoNodo && (
+              <SheetDescription>{tipoNodo}</SheetDescription>
+            )}
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+            {selected && (
+              <DetalleAccionesBrain
+                selected={selected}
+                dia={hoy}
+                novedades={novedadesSelected}
+                onAbrirReporte={() =>
+                  navegar(
+                    `/centros/reportes/${selected.centroId}?vista=reporte&dia=${hoy}`,
+                  )
+                }
+                onAbrirSeguimiento={() =>
+                  navegar(
+                    `/centros/reportes/${selected.centroId}?vista=incidencias`,
+                  )
+                }
+                onAbrirBandeja={() =>
+                  navegar("/incidencias/funcionarios?estado=seguimiento")
+                }
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {!(panelCentrosAbierto && esMovil) && (
+      <div className="pointer-events-none absolute bottom-3 left-3 z-30 flex max-w-[min(100%,calc(100%-6rem))] flex-col items-start gap-2">
+        {chromeSuperiorOcupado && <TotalesBrain resumen={resumen} />}
+        <div className="flex max-w-full flex-wrap items-end gap-2">
+          <LeyendaSeveridadBrain className="pointer-events-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 backdrop-blur" />
+          {lenteCritica && (
+            <Badge
+              variant="destructive"
+              className="pointer-events-auto text-[10px]"
+            >
+              Críticas
+            </Badge>
+          )}
+          {hayFiltroReporteEstado && (
+            <Badge
+              variant="secondary"
+              className="pointer-events-auto text-[10px]"
+            >
+              {[
+                filtrosReporte.has("completo") && "Completos",
+                filtrosReporte.has("parcial") && "Parciales",
+                filtrosReporte.has("incompleto") && "Sin reporte",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </Badge>
           )}
         </div>
-      </aside>
-
-      <div className="pointer-events-none absolute bottom-3 left-3 z-30 flex max-w-[min(100%,20rem)] flex-wrap items-end gap-2">
-        <LeyendaSeveridadBrain className="pointer-events-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 backdrop-blur" />
-        {lenteCritica && (
-          <Badge variant="destructive" className="pointer-events-auto text-[10px]">
-            Lente críticas
-          </Badge>
-        )}
       </div>
+      )}
     </div>
   );
 }
 
-function KpiChip({
-  label,
-  valor,
-  tono = "muted",
+function DetalleAccionesBrain({
+  selected,
+  dia,
+  novedades,
+  onAbrirReporte,
+  onAbrirSeguimiento,
+  onAbrirBandeja,
 }: {
-  label: string;
-  valor: string | number;
-  tono?: "muted" | "ok" | "critica";
+  selected: SebinBrainNode;
+  dia: string;
+  novedades?: NovedadesBrainResumen | null;
+  onAbrirReporte: () => void;
+  onAbrirSeguimiento: () => void;
+  onAbrirBandeja: () => void;
 }) {
-  const color =
-    tono === "ok"
-      ? META_SEVERIDAD_BRAIN.ok.color
-      : tono === "critica"
-        ? META_SEVERIDAD_BRAIN.critica.color
-        : undefined;
+  // Crítica (salud / novedad / denuncia) vive en seguimiento — no en el reporte del día
+  const esCritica = selected.severidad === "critica";
+
   return (
-    <div className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-1.5">
-      <div className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </div>
-      <div
-        className="mt-0.5 text-base font-bold tabular-nums leading-none"
-        style={color ? { color } : undefined}
-      >
-        {valor}
-      </div>
+    <div className="space-y-2.5">
+      <DetalleNodoBrain node={selected} dia={dia} novedades={novedades} />
+      {selected.centroId && (
+        <div className="flex flex-col gap-1.5">
+          {esCritica ? (
+            <>
+              <Button type="button" size="sm" onClick={onAbrirSeguimiento}>
+                Seguimiento
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onAbrirReporte}
+              >
+                Abrir reporte
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" size="sm" onClick={onAbrirReporte}>
+                Abrir reporte
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onAbrirSeguimiento}
+              >
+                Seguimiento
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+      {selected.kind === "unidad" && selected.criticos > 0 && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={onAbrirBandeja}
+        >
+          Críticas en bandeja
+        </Button>
+      )}
     </div>
   );
 }
+

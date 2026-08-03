@@ -7,6 +7,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Collapsible,
@@ -101,7 +102,8 @@ export function PanelCentros({
 
   function elegirCentro(centro: CentroTransitorio) {
     onSeleccionarCentro(centro);
-    if (window.innerWidth < 640) onCambiarAbierto(false);
+    // mismo corte que useIsMobile (768)
+    if (window.innerWidth < 768) onCambiarAbierto(false);
   }
 
   /** Clic en una dirección: añade/quita del filtro (multi-selección). */
@@ -138,16 +140,30 @@ export function PanelCentros({
   }, [unidadesConCampamentos, catalogoCuerpos, centrosPorUnidad]);
 
   return (
-    <div
-      className={cn(
-        "absolute inset-y-0 left-0 z-10 flex w-[min(21rem,86vw)] flex-col border-r border-border bg-background/95 shadow-xl backdrop-blur-sm transition-transform duration-300",
-        !abierto && "pointer-events-none -translate-x-full",
+    <>
+      {/* Móvil: scrim — tap fuera cierra; tapa zoom/filtros del brain */}
+      {abierto && (
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label="Cerrar lista de campamentos"
+          onClick={() => onCambiarAbierto(false)}
+          className="absolute inset-0 z-[55] h-auto w-auto rounded-none bg-black/50 p-0 hover:bg-black/50 md:hidden"
+        />
       )}
-      aria-hidden={!abierto}
-    >
+      <div
+        className={cn(
+          "absolute inset-y-0 left-0 z-[60] flex w-[min(21rem,92vw)] flex-col border-r border-border bg-background/95 shadow-xl backdrop-blur-sm transition-transform duration-300 md:w-[min(21rem,86vw)]",
+          !abierto && "pointer-events-none -translate-x-full",
+        )}
+        aria-hidden={!abierto}
+        role="dialog"
+        aria-modal={abierto || undefined}
+        aria-label="Lista de campamentos"
+      >
       <div className="shrink-0 space-y-2 border-b border-border px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
-          <div>
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Lista de campamentos
             </p>
@@ -155,14 +171,18 @@ export function PanelCentros({
               Por cuerpo y unidad responsable
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => onCambiarAbierto(false)}
-            title="Plegar panel"
-            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            aria-label="Cerrar lista"
+            className="shrink-0 gap-1.5"
           >
-            <PanelLeftClose className="size-4" />
-          </button>
+            <X className="size-4 md:hidden" />
+            <PanelLeftClose className="hidden size-4 md:block" />
+            <span className="md:hidden">Cerrar</span>
+          </Button>
         </div>
 
         <div className="relative">
@@ -400,6 +420,7 @@ export function PanelCentros({
         <span className="font-semibold text-rose-400">rosa</span> = casos activos).
       </div>
     </div>
+    </>
   );
 }
 

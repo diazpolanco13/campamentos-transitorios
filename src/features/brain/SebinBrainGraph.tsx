@@ -20,6 +20,7 @@ import {
 } from "@/domain/sebinBrainGraph";
 import {
   CAM_EASE,
+  CAM_EASE_ENTER_FOCUS,
   CAM_EASE_HOME,
   cameraRect,
   lerpRect,
@@ -43,7 +44,15 @@ import { META_ESTADO_REPORTE } from "@/domain/reporteDiario";
 import { rafThrottle } from "@/lib/raf-throttle";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Minus, Plus, Scan, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  Minus,
+  Plus,
+  Scan,
+  X,
+} from "lucide-react";
 import { SebinNeuralCore } from "./SebinNeuralCore";
 
 const USER_ZOOM_MIN = 0.35;
@@ -170,15 +179,29 @@ export function SebinBrainGraph({
   graph,
   selectedId,
   onSelect,
+  focusUnidadId,
+  onFocusUnidadIdChange,
+  ocultarChromeFlotante = false,
   className,
 }: {
   graph: SebinBrainGraph;
   selectedId: string | null;
   onSelect: (node: SebinBrainNode | null) => void;
+  /** Foco de unidad controlado por la vista (panel/lista/migas). */
+  focusUnidadId: string | null;
+  onFocusUnidadIdChange: (id: string | null) => void;
+  /** Oculta zoom/migas/flechas (p. ej. panel lista abierto en móvil). */
+  ocultarChromeFlotante?: boolean;
   className?: string;
 }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
-  const [focusUnidadId, setFocusUnidadId] = useState<string | null>(null);
+  const setFocusUnidadId = (
+    next: string | null | ((prev: string | null) => string | null),
+  ) => {
+    onFocusUnidadIdChange(
+      typeof next === "function" ? next(focusUnidadId) : next,
+    );
+  };
   const [, setTick] = useState(0);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -207,6 +230,8 @@ export function SebinBrainGraph({
   const stageTargetRef = useRef(0);
   const stageVelRef = useRef(0);
   const prevFocusUnidadRef = useRef<string | null>(null);
+  /** Hasta este ts: pull suave overview→foco (sin teleporte). */
+  const enterFocusSoftUntilRef = useRef(0);
   const wheelRef = useRef(0);
   const wheelTargetRef = useRef(0);
   const camStateRef = useRef({
@@ -321,6 +346,7 @@ export function SebinBrainGraph({
       prevFocusUnidadRef.current = null;
       stageVelRef.current = 0;
       wheelTargetRef.current = 0;
+      enterFocusSoftUntilRef.current = 0;
       return;
     }
     const fromHome = !prevFocusUnidadRef.current;
@@ -347,7 +373,7 @@ export function SebinBrainGraph({
       core.restOverride = null;
     }
 
-    // teleporte solo al entrar desde home (←/→ gira con inercia)
+    // Entrada desde overview: viaje fluido (sin teleporte). Reduced-motion sí clava.
     if (fromHome && idx >= 0) {
       if (userZoomRef.current > 1.2) {
         userZoomRef.current = 1;
@@ -360,34 +386,43 @@ export function SebinBrainGraph({
         if (ti < 0 || nOrd === 0) return null;
         return cyclicDeltaF(idx, ti, nOrd);
       };
-      for (const d of nodesRef.current) {
-        let t: Pt | null = null;
-        if (d.kind === "sebin") {
-          t =
-            allTreesRef.current.get(focusUnidadId)?.positions.get(d.id) ?? null;
-        } else {
-          const uid =
-            d.kind === "unidad"
-              ? d.id
-              : d.unidadClave
-                ? `unidad:${d.unidadClave}`
-                : null;
-          if (!uid) continue;
-          const o = rimOff(uid);
-          const tree = allTreesRef.current.get(uid);
-          const home = tree?.positions.get(d.id) ?? tree?.positions.get(uid);
-          if (o == null || !home) continue;
-          t = rotateAbout(home, WHEEL_GEOM.hub, o * WHEEL_GEOM.delta);
+      const teleportToFocus = () => {
+        for (const d of nodesRef.current) {
+          let t: Pt | null = null;
+          if (d.kind === "sebin") {
+            t =
+              allTreesRef.current.get(focusUnidadId)?.positions.get(d.id) ??
+              null;
+          } else {
+            const uid =
+              d.kind === "unidad"
+                ? d.id
+                : d.unidadClave
+                  ? `unidad:${d.unidadClave}`
+                  : null;
+            if (!uid) continue;
+            const o = rimOff(uid);
+            const tree = allTreesRef.current.get(uid);
+            const home = tree?.positions.get(d.id) ?? tree?.positions.get(uid);
+            if (o == null || !home) continue;
+            t = rotateAbout(home, WHEEL_GEOM.hub, o * WHEEL_GEOM.delta);
+          }
+          if (!t) continue;
+          d.x = t.x;
+          d.y = t.y;
+          d.vx = 0;
+          d.vy = 0;
         }
-        if (!t) continue;
-        d.x = t.x;
-        d.y = t.y;
-        d.vx = 0;
-        d.vy = 0;
+        setTick((x) => (x + 1) % 1_000_000);
+      };
+      if (reducedRef.current) {
+        teleportToFocus();
+        enterFocusSoftUntilRef.current = 0;
+      } else {
+        enterFocusSoftUntilRef.current = performance.now() + 1300;
       }
-      setTick((x) => (x + 1) % 1_000_000);
     }
-    simRef.current?.alpha(fromHome ? 0.1 : 0.14).restart();
+    simRef.current?.alpha(fromHome ? 0.62 : 0.14).restart();
   }, [focusUnidadId, byId]);
 
   const topoKey = useMemo(
@@ -510,6 +545,8 @@ export function SebinBrainGraph({
       (alpha: number) => {
         const focused = !!focusUnidadRef.current;
         const apexId = focusUnidadRef.current;
+        const softEnter =
+          focused && performance.now() < enterFocusSoftUntilRef.current;
         for (const d of stageNodes) {
           if (d.fx != null || d.fy != null) continue;
           const t = targetOf(d);
@@ -520,11 +557,20 @@ export function SebinBrainGraph({
               d.id === apexId ||
               (d.kind === "campamento" &&
                 `unidad:${d.unidadClave}` === apexId));
-          // apex y flancos: pull fuerte + snap (abanico ordenado, no nube)
-          const k = (focused ? (inApex ? 0.98 : 0.92) : 0.42) * alpha;
+          // overview→foco: pull suave; luego snap fuerte (abanico ordenado)
+          const pull = focused
+            ? softEnter
+              ? inApex
+                ? 0.28
+                : 0.2
+              : inApex
+                ? 0.98
+                : 0.92
+            : 0.42;
+          const k = pull * alpha;
           const dx = t.x - (d.x ?? 0);
           const dy = t.y - (d.y ?? 0);
-          const snap = focused ? 2.2 : 0;
+          const snap = focused && !softEnter ? 2.2 : 0;
           if (snap && Math.hypot(dx, dy) < snap) {
             d.x = t.x;
             d.y = t.y;
@@ -633,22 +679,33 @@ export function SebinBrainGraph({
 
       // camera — en foco enmarca árbol; zoom estrecho solo en camp
       const c = camStateRef.current;
+      const focusUnidadIdNow = focusUnidadRef.current;
+      const focusUnidadLayoutPos = focusUnidadIdNow
+        ? (focusTargetsRef.current?.get(focusUnidadIdNow) ?? null)
+        : null;
       const target = cameraRect(
         { w: VB_W, h: VB_H },
         {
           focusedUnidad: c.focusedUnidad,
           selectedKind: c.selectedKind,
           selectedNodePos: posOf(c.selectedId),
+          focusUnidadPos: focusUnidadLayoutPos ?? posOf(focusUnidadIdNow),
           focusCenter: focusCenterRef.current,
           focusBounds: focusBoundsRef.current,
         },
       );
       const goingHome = !c.focusedUnidad && !c.selectedId;
-      const next = lerpRect(
-        cur,
-        target,
-        reduced ? 1 : goingHome ? CAM_EASE_HOME : CAM_EASE,
-      );
+      const enteringFocus =
+        c.focusedUnidad &&
+        performance.now() < enterFocusSoftUntilRef.current;
+      const ease = reduced
+        ? 1
+        : goingHome
+          ? CAM_EASE_HOME
+          : enteringFocus
+            ? CAM_EASE_ENTER_FOCUS
+            : CAM_EASE;
+      const next = lerpRect(cur, target, ease);
       cur = next;
       baseCamRef.current = cur;
       // zoom/pan del usuario encima de la cámara cinematic
@@ -931,7 +988,13 @@ export function SebinBrainGraph({
   };
 
   const focusNodeMeta = focusUnidadId ? byId.get(focusUnidadId) : undefined;
+  const selectedCampMeta =
+    selectedMeta?.kind === "campamento" ? selectedMeta : null;
   const focusIdx = focusUnidadId ? unidadOrder.indexOf(focusUnidadId) : -1;
+
+  const volverAUnidad = () => {
+    if (focusNodeMeta) onSelect(focusNodeMeta);
+  };
   const goUnidad = (dir: -1 | 1) => {
     if (unidadOrder.length === 0) return;
     const i =
@@ -1152,86 +1215,125 @@ export function SebinBrainGraph({
       {/* grilla espacial (FounderOS kg-grid) */}
       <div className="sebin-space-grid pointer-events-none absolute inset-0" aria-hidden />
 
+      {/* Migas: fila bajo lista/búsqueda (no compite con KPI ni zoom) */}
+      {!ocultarChromeFlotante && (
       <div
-        className="absolute left-3 z-20 flex flex-wrap items-center gap-2"
+        className="pointer-events-none absolute z-20 flex max-w-[min(100%,calc(100%-9rem))] flex-wrap items-center gap-2 pl-14 pr-3 md:max-w-[min(36rem,calc(100%-var(--sebin-chrome-right, 0.75rem)-6rem))]"
         style={{ top: "var(--sebin-chrome-top, 0.75rem)" }}
       >
         {focusUnidadId && (
-          <>
+          <div className="pointer-events-auto flex flex-wrap items-center gap-2">
             <Button type="button" size="sm" variant="secondary" onClick={clearFocus}>
               <ArrowLeft className="size-3.5" />
               Volver
             </Button>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="outline"
-              aria-label="Unidad anterior"
-              onClick={() => goUnidad(-1)}
-            >
-              <ArrowLeft className="size-3.5" />
-            </Button>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="outline"
-              aria-label="Unidad siguiente"
-              onClick={() => goUnidad(1)}
-            >
-              <ArrowRight className="size-3.5" />
-            </Button>
             <span
-              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold backdrop-blur"
+              className={cn(
+                "inline-flex max-w-[11rem] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold backdrop-blur",
+                selectedCampMeta && "cursor-pointer hover:bg-muted/40",
+              )}
               style={{
                 borderColor: focusNodeMeta?.color,
                 color: focusNodeMeta?.color,
-                background: "color-mix(in oklab, var(--background) 85%, transparent)",
+                background:
+                  "color-mix(in oklab, var(--background) 85%, transparent)",
               }}
+              title={focusNodeMeta?.label ?? "Unidad"}
+              onClick={selectedCampMeta ? volverAUnidad : undefined}
+              onKeyDown={
+                selectedCampMeta
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        volverAUnidad();
+                      }
+                    }
+                  : undefined
+              }
+              role={selectedCampMeta ? "button" : undefined}
+              tabIndex={selectedCampMeta ? 0 : undefined}
             >
-              {focusNodeMeta?.label ?? "Unidad"}
-              <button
-                type="button"
-                className="rounded-sm opacity-70 hover:opacity-100"
-                aria-label="Cerrar foco"
-                onClick={clearFocus}
-              >
-                <X className="size-3" />
-              </button>
+              <span className="truncate">{focusNodeMeta?.label ?? "Unidad"}</span>
+              {!selectedCampMeta && (
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  className="size-5 shrink-0"
+                  aria-label="Cerrar foco"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearFocus();
+                  }}
+                >
+                  <X className="size-3" />
+                </Button>
+              )}
             </span>
-          </>
+            {selectedCampMeta && (
+              <>
+                <ChevronRight
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+                <span
+                  className="inline-flex max-w-[14rem] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold backdrop-blur"
+                  style={{
+                    borderColor: META_SEVERIDAD_BRAIN[selectedCampMeta.severidad].color,
+                    color: META_SEVERIDAD_BRAIN[selectedCampMeta.severidad].color,
+                    background:
+                      "color-mix(in oklab, var(--background) 85%, transparent)",
+                  }}
+                  title={selectedCampMeta.label}
+                >
+                  <span className="truncate">{selectedCampMeta.label}</span>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className="size-5 shrink-0"
+                    aria-label="Volver a la unidad"
+                    onClick={volverAUnidad}
+                  >
+                    <X className="size-3" />
+                  </Button>
+                </span>
+              </>
+            )}
+          </div>
         )}
       </div>
+      )}
 
-      {/* flechas laterales tipo FounderOS (solo en foco) */}
-      {focusUnidadId && (
+      {/* flechas: izq / der al borde */}
+      {focusUnidadId && !ocultarChromeFlotante && (
         <>
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="icon"
             aria-label="Unidad anterior"
             onClick={() => goUnidad(-1)}
-            className="absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded-full border bg-background/70 p-3 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
+            className="absolute left-3 top-1/2 z-30 size-12 -translate-y-1/2 rounded-full border-2 border-border bg-background text-foreground shadow-lg hover:bg-accent md:left-4 md:size-14"
           >
-            <ArrowLeft className="size-5" />
-          </button>
-          <button
+            <ArrowLeft className="size-6 md:size-7" />
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
+            size="icon"
             aria-label="Unidad siguiente"
             onClick={() => goUnidad(1)}
-            className="absolute top-1/2 z-20 -translate-y-1/2 rounded-full border bg-background/70 p-3 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
-            style={{ right: "max(0.5rem, var(--sebin-chrome-right, 0.75rem))" }}
+            className="absolute right-3 top-1/2 z-[45] size-12 -translate-y-1/2 rounded-full border-2 border-border bg-background text-foreground shadow-lg hover:bg-accent md:right-4 md:size-14"
           >
-            <ArrowRight className="size-5" />
-          </button>
+            <ArrowRight className="size-6 md:size-7" />
+          </Button>
         </>
       )}
 
-      <div
-        className="absolute z-20 flex items-center gap-1 rounded-md border bg-background/85 p-1 backdrop-blur"
-        style={{
-          top: "var(--sebin-chrome-top, 0.75rem)",
-          right: "var(--sebin-chrome-right, 0.75rem)",
-        }}
-      >
+      {/* Zoom: esquina superior derecha fija */}
+      {!ocultarChromeFlotante && (
+      <div className="absolute right-3 top-3 z-50 flex items-center gap-1 rounded-md border bg-background/85 p-1 backdrop-blur">
         <Button
           type="button"
           size="icon-sm"
@@ -1263,6 +1365,7 @@ export function SebinBrainGraph({
           <Scan className="size-3.5" />
         </Button>
       </div>
+      )}
 
       <svg
         ref={svgRef}
@@ -1868,79 +1971,133 @@ export function LeyendaSeveridadBrain({
   );
 }
 
+export type NovedadesBrainResumen = {
+  total: number;
+  negativas: number;
+  titulos: string[];
+};
+
 export function DetalleNodoBrain({
   node,
   dia,
+  novedades,
 }: {
   node: SebinBrainNode;
   dia: string;
+  novedades?: NovedadesBrainResumen | null;
 }) {
   const sev = META_SEVERIDAD_BRAIN[node.severidad];
+  const metaReporte = node.estadoReporte
+    ? META_ESTADO_REPORTE[node.estadoReporte]
+    : null;
+
+  const reporteTitulo = metaReporte
+    ? metaReporte.label
+    : node.camps > 0
+      ? `${node.reportesOk}/${node.camps} completos`
+      : "Sin datos";
+  const reporteColor =
+    metaReporte?.color ??
+    (node.camps > 0 && node.reportesOk === node.camps
+      ? META_ESTADO_REPORTE.completo.color
+      : node.reportesOk > 0
+        ? META_ESTADO_REPORTE.parcial.color
+        : META_ESTADO_REPORTE.pendiente.color);
+  const reporteDetalle = metaReporte
+    ? node.fasesOk != null
+      ? `Fases ${node.fasesOk}/6 · ${dia}`
+      : dia
+    : `${node.camps} campamento${node.camps === 1 ? "" : "s"} · ${dia}`;
+
+  const nov = novedades ?? { total: 0, negativas: 0, titulos: [] };
+  const novAlerta = nov.negativas > 0;
+
   return (
-    <div className="space-y-2">
-      <div>
-        <div className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">
-          {node.kind === "sebin"
-            ? "Núcleo"
-            : node.kind === "unidad"
-              ? "Unidad"
-              : "Campamento"}
-        </div>
-        <h3 className="mt-0.5 text-sm font-semibold leading-tight">{node.label}</h3>
-        {node.sublabel && (
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            {node.sublabel}
-          </p>
-        )}
-      </div>
-
-      <div
-        className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium"
-        style={{ borderColor: sev.color, color: sev.color }}
-      >
-        <span className="size-1.5 rounded-full" style={{ background: sev.color }} />
-        {sev.label}
-      </div>
-
-      <dl className="grid grid-cols-2 gap-1 text-[10px]">
-        <div className="rounded border bg-muted/30 px-1.5 py-1">
-          <dt className="text-muted-foreground">Camps</dt>
-          <dd className="text-xs font-semibold tabular-nums">{node.camps}</dd>
-        </div>
-        <div className="rounded border bg-muted/30 px-1.5 py-1">
-          <dt className="text-muted-foreground">OK</dt>
-          <dd className="text-xs font-semibold tabular-nums">{node.reportesOk}</dd>
-        </div>
-        <div className="rounded border bg-muted/30 px-1.5 py-1">
-          <dt className="text-muted-foreground">Críticos</dt>
-          <dd className="text-xs font-semibold tabular-nums text-red-500">
-            {node.criticos}
-          </dd>
-        </div>
-        {node.fasesOk != null && (
-          <div className="rounded border bg-muted/30 px-1.5 py-1">
-            <dt className="text-muted-foreground">Fases</dt>
-            <dd className="text-xs font-semibold tabular-nums">
-              {node.fasesOk}/6
-            </dd>
-          </div>
-        )}
-      </dl>
-
-      {node.estadoReporte && (
-        <p className="text-[10px] text-muted-foreground">
-          {dia}:{" "}
-          <span
-            className="font-medium"
-            style={{ color: META_ESTADO_REPORTE[node.estadoReporte].color }}
-          >
-            {META_ESTADO_REPORTE[node.estadoReporte].label}
-          </span>
+    <div className="space-y-2.5">
+      {node.sublabel && (
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          {node.sublabel}
         </p>
       )}
-      <p className="text-[9px] leading-snug text-muted-foreground">
-        Arrastrá · rueda=zoom · pan · Esc=volver
-      </p>
+
+      {node.severidad === "critica" && (
+        <div
+          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+          style={{ borderColor: sev.color, color: sev.color }}
+        >
+          <span className="size-1.5 rounded-full" style={{ background: sev.color }} />
+          {sev.label}
+        </div>
+      )}
+
+      {/* Bloque principal: reporte diario */}
+      <div
+        className="rounded-lg border px-2.5 py-2"
+        style={{ borderColor: `color-mix(in oklab, ${reporteColor} 45%, var(--border))` }}
+      >
+        <div className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Reporte diario
+        </div>
+        <div
+          className="mt-0.5 text-sm font-semibold leading-tight"
+          style={{ color: reporteColor }}
+        >
+          {reporteTitulo}
+        </div>
+        <p className="mt-0.5 text-[10px] text-muted-foreground">{reporteDetalle}</p>
+      </div>
+
+      {/* Bloque principal: novedades */}
+      <div
+        className="rounded-lg border px-2.5 py-2"
+        style={
+          novAlerta
+            ? {
+                borderColor: `color-mix(in oklab, ${META_SEVERIDAD_BRAIN.critica.color} 45%, var(--border))`,
+              }
+            : undefined
+        }
+      >
+        <div className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Novedades hoy
+        </div>
+        {novAlerta ? (
+          <>
+            <div
+              className="mt-0.5 text-sm font-semibold"
+              style={{ color: META_SEVERIDAD_BRAIN.critica.color }}
+            >
+              {nov.negativas === 1
+                ? "1 negativa"
+                : `${nov.negativas} negativas`}
+              {nov.total > nov.negativas
+                ? ` · ${nov.total} en total`
+                : null}
+            </div>
+            {nov.titulos.length > 0 && (
+              <ul className="mt-1 space-y-0.5 text-[10px] leading-snug text-muted-foreground">
+                {nov.titulos.map((t, i) => (
+                  <li key={`${i}-${t}`} className="truncate">
+                    · {t}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : nov.total > 0 ? (
+          <div className="mt-0.5 text-sm font-semibold text-foreground">
+            {nov.total === 1 ? "1 registrada" : `${nov.total} registradas`}
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              · sin negativas
+            </span>
+          </div>
+        ) : (
+          <div className="mt-0.5 text-sm font-medium text-muted-foreground">
+            Sin novedades
+          </div>
+        )}
+      </div>
     </div>
   );
 }

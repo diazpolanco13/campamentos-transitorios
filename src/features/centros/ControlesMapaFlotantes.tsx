@@ -33,7 +33,7 @@ export function ControlesMapaFlotantes({
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="map-controls-overlay pointer-events-none absolute left-3 top-3 z-20">
+      <div className="map-controls-overlay pointer-events-none absolute left-3 top-3 z-40">
         <ButtonGroup
           orientation="vertical"
           className="pointer-events-auto w-10 min-w-10 overflow-hidden rounded-xl border border-border bg-card shadow-lg"

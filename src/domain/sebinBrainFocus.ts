@@ -51,10 +51,11 @@ const round2 = (n: number) => {
 export function branchPath(a: Pt, b: Pt): string {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  const c1x = a.x + dx * 0.28;
-  const c1y = a.y + dy * 0.4;
-  const c2x = b.x - dx * 0.08;
-  const c2y = a.y + dy * 0.75;
+  // curva más abierta cerca del hub — menos haz apretado al salir
+  const c1x = a.x + dx * 0.18;
+  const c1y = a.y + dy * 0.28;
+  const c2x = b.x - dx * 0.12;
+  const c2y = a.y + dy * 0.72;
   return `M ${round2(a.x)} ${round2(a.y)} C ${round2(c1x)} ${round2(c1y)}, ${round2(c2x)} ${round2(c2y)}, ${round2(b.x)} ${round2(b.y)}`;
 }
 
@@ -64,9 +65,9 @@ export function branchWidth(depth: number): number {
 
 /** Unidad cerca del centro vertical — bloque compacto. */
 const UNIDAD_Y = 0.58;
-const SEBIN_GAP = 48; // px bajo unidad
-const CAMP_Y1 = 0.34; // fila principal del abanico
-const CAMP_Y2 = 0.22; // segunda fila (solo denso)
+const SEBIN_GAP = 100; // aire SEBIN ↔ unidad (antes 48, se pisaban)
+const CAMP_Y1 = 0.30; // arco más arriba → vínculos más largos desde unidad
+const CAMP_Y2 = 0.17; // segunda fila (solo denso)
 const MARGIN = 56;
 const TWO_ROW_AT = 13;
 const LABEL_MAX_N = 8;
@@ -172,7 +173,7 @@ export function layoutFocoUnidad(input: FocusLayoutInput): FocusLayoutResult {
   minX -= 32;
   maxX += 32;
   minY -= labelsReadable ? 36 : 18;
-  maxY += 32;
+  maxY += 72; // margen bajo SEBIN — evita corte en el borde del viewport
 
   return {
     positions,
