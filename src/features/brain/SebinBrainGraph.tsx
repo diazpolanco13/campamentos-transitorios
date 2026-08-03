@@ -1152,7 +1152,10 @@ export function SebinBrainGraph({
       {/* grilla espacial (FounderOS kg-grid) */}
       <div className="sebin-space-grid pointer-events-none absolute inset-0" aria-hidden />
 
-      <div className="absolute left-3 top-3 z-20 flex flex-wrap items-center gap-2">
+      <div
+        className="absolute left-3 z-20 flex flex-wrap items-center gap-2"
+        style={{ top: "var(--sebin-chrome-top, 0.75rem)" }}
+      >
         {focusUnidadId && (
           <>
             <Button type="button" size="sm" variant="secondary" onClick={clearFocus}>
@@ -1214,14 +1217,21 @@ export function SebinBrainGraph({
             type="button"
             aria-label="Unidad siguiente"
             onClick={() => goUnidad(1)}
-            className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-full border bg-background/70 p-3 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
+            className="absolute top-1/2 z-20 -translate-y-1/2 rounded-full border bg-background/70 p-3 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
+            style={{ right: "max(0.5rem, var(--sebin-chrome-right, 0.75rem))" }}
           >
             <ArrowRight className="size-5" />
           </button>
         </>
       )}
 
-      <div className="absolute right-3 top-3 z-20 flex items-center gap-1 rounded-md border bg-background/85 p-1 backdrop-blur">
+      <div
+        className="absolute z-20 flex items-center gap-1 rounded-md border bg-background/85 p-1 backdrop-blur"
+        style={{
+          top: "var(--sebin-chrome-top, 0.75rem)",
+          right: "var(--sebin-chrome-right, 0.75rem)",
+        }}
+      >
         <Button
           type="button"
           size="icon-sm"
@@ -1867,50 +1877,50 @@ export function DetalleNodoBrain({
 }) {
   const sev = META_SEVERIDAD_BRAIN[node.severidad];
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div>
-        <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        <div className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">
           {node.kind === "sebin"
             ? "Núcleo"
             : node.kind === "unidad"
-              ? "Unidad de supervisión"
+              ? "Unidad"
               : "Campamento"}
         </div>
-        <h3 className="mt-0.5 text-base font-semibold leading-tight">
-          {node.label}
-        </h3>
+        <h3 className="mt-0.5 text-sm font-semibold leading-tight">{node.label}</h3>
         {node.sublabel && (
-          <p className="text-xs text-muted-foreground">{node.sublabel}</p>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            {node.sublabel}
+          </p>
         )}
       </div>
 
       <div
-        className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium"
+        className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium"
         style={{ borderColor: sev.color, color: sev.color }}
       >
-        <span className="size-2 rounded-full" style={{ background: sev.color }} />
+        <span className="size-1.5 rounded-full" style={{ background: sev.color }} />
         {sev.label}
       </div>
 
-      <dl className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-md border bg-muted/30 px-2 py-1.5">
-          <dt className="text-muted-foreground">Campamentos</dt>
-          <dd className="text-sm font-semibold tabular-nums">{node.camps}</dd>
+      <dl className="grid grid-cols-2 gap-1 text-[10px]">
+        <div className="rounded border bg-muted/30 px-1.5 py-1">
+          <dt className="text-muted-foreground">Camps</dt>
+          <dd className="text-xs font-semibold tabular-nums">{node.camps}</dd>
         </div>
-        <div className="rounded-md border bg-muted/30 px-2 py-1.5">
-          <dt className="text-muted-foreground">Reportes OK</dt>
-          <dd className="text-sm font-semibold tabular-nums">{node.reportesOk}</dd>
+        <div className="rounded border bg-muted/30 px-1.5 py-1">
+          <dt className="text-muted-foreground">OK</dt>
+          <dd className="text-xs font-semibold tabular-nums">{node.reportesOk}</dd>
         </div>
-        <div className="rounded-md border bg-muted/30 px-2 py-1.5">
-          <dt className="text-muted-foreground">Críticos hoy</dt>
-          <dd className="text-sm font-semibold tabular-nums text-red-500">
+        <div className="rounded border bg-muted/30 px-1.5 py-1">
+          <dt className="text-muted-foreground">Críticos</dt>
+          <dd className="text-xs font-semibold tabular-nums text-red-500">
             {node.criticos}
           </dd>
         </div>
         {node.fasesOk != null && (
-          <div className="rounded-md border bg-muted/30 px-2 py-1.5">
-            <dt className="text-muted-foreground">Fases reporte</dt>
-            <dd className="text-sm font-semibold tabular-nums">
+          <div className="rounded border bg-muted/30 px-1.5 py-1">
+            <dt className="text-muted-foreground">Fases</dt>
+            <dd className="text-xs font-semibold tabular-nums">
               {node.fasesOk}/6
             </dd>
           </div>
@@ -1918,8 +1928,8 @@ export function DetalleNodoBrain({
       </dl>
 
       {node.estadoReporte && (
-        <p className="text-xs text-muted-foreground">
-          Reporte {dia}:{" "}
+        <p className="text-[10px] text-muted-foreground">
+          {dia}:{" "}
           <span
             className="font-medium"
             style={{ color: META_ESTADO_REPORTE[node.estadoReporte].color }}
@@ -1928,8 +1938,8 @@ export function DetalleNodoBrain({
           </span>
         </p>
       )}
-      <p className="text-[10px] text-muted-foreground">
-        Arrastrá nodos (incl. SEBIN) · rueda = zoom · arrastrar fondo = pan · Esc = volver
+      <p className="text-[9px] leading-snug text-muted-foreground">
+        Arrastrá · rueda=zoom · pan · Esc=volver
       </p>
     </div>
   );

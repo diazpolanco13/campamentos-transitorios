@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Network, Siren } from "lucide-react";
+import { Network, Siren, X } from "lucide-react";
 import type { Sesion } from "@/data/authSupabase";
 import { useSupabaseQuery } from "@/data/useSupabaseQuery";
 import { useOcupacionesCentros } from "@/data/useOcupacionesCentros";
@@ -27,7 +27,6 @@ import {
 } from "@/domain/sebinBrainGraph";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DetalleNodoBrain,
   LeyendaSeveridadBrain,
@@ -125,130 +124,143 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
   const { resumen } = graphFull;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-3 md:p-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-            <Network className="size-3.5" />
-            Brain operativo
-          </div>
-          <h1 className="mt-0.5 text-xl font-bold tracking-tight md:text-2xl">
-            SEBIN · unidades · campamentos
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Pulso del día {hoy}: reportes diarios y alertas críticas (novedades
-            negativas, salud abierta, denuncias).
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant={lenteCritica ? "default" : "outline"}
-            size="sm"
-            onClick={() => setLenteCritica((v) => !v)}
-          >
-            <Siren className="size-3.5" />
-            Solo críticas
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => navegar("/incidencias/funcionarios")}
-          >
-            Bandeja
-          </Button>
-        </div>
-      </header>
+    <div className="relative h-full min-h-0 w-full overflow-hidden [--sebin-chrome-top:8.5rem] [--sebin-chrome-right:15.5rem] lg:[--sebin-chrome-top:6.75rem]">
+      <SebinBrainGraph
+        graph={graph}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        className="h-full w-full"
+      />
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <KpiChip label="Campamentos" valor={resumen.camps} />
-        <KpiChip label="Unidades" valor={resumen.unidades} />
-        <KpiChip
-          label="Reportes OK"
-          valor={`${resumen.reportesOk}/${resumen.camps}`}
-          tono="ok"
-        />
-        <KpiChip
-          label="Críticos hoy"
-          valor={resumen.criticos}
-          tono={resumen.criticos > 0 ? "critica" : "muted"}
-        />
+      {/* KPI + acciones — overlay superior */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 p-3 pr-[calc(var(--sebin-chrome-right)+0.5rem)]">
+        <div className="pointer-events-auto flex flex-col gap-2 rounded-xl border border-border/70 bg-background/80 p-3 shadow-sm backdrop-blur-md lg:flex-row lg:items-end lg:justify-between lg:gap-4">
+          <div className="min-w-0 lg:max-w-md">
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+              <Network className="size-3.5 shrink-0" />
+              Brain operativo
+            </div>
+            <h1 className="mt-0.5 truncate text-base font-bold tracking-tight md:text-lg">
+              SEBIN · unidades · campamentos
+            </h1>
+            <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">
+              Pulso del día {hoy}
+            </p>
+          </div>
+
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4 lg:max-w-xl">
+            <KpiChip label="Campamentos" valor={resumen.camps} />
+            <KpiChip label="Unidades" valor={resumen.unidades} />
+            <KpiChip
+              label="Reportes OK"
+              valor={`${resumen.reportesOk}/${resumen.camps}`}
+              tono="ok"
+            />
+            <KpiChip
+              label="Críticos hoy"
+              valor={resumen.criticos}
+              tono={resumen.criticos > 0 ? "critica" : "muted"}
+            />
+          </div>
+
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant={lenteCritica ? "default" : "outline"}
+              size="sm"
+              onClick={() => setLenteCritica((v) => !v)}
+            >
+              <Siren className="size-3.5" />
+              Solo críticas
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => navegar("/incidencias/funcionarios")}
+            >
+              Bandeja
+            </Button>
+          </div>
+        </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1fr_280px]">
-        <Card className="min-h-[420px] overflow-hidden border-border/80 bg-background py-0">
-          <CardContent className="relative h-full min-h-[420px] p-0 lg:min-h-[560px]">
-            <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex flex-wrap items-center justify-between gap-2">
-              <LeyendaSeveridadBrain className="rounded-md border bg-background/80 px-2 py-1 backdrop-blur" />
-              {lenteCritica && (
-                <Badge variant="destructive" className="pointer-events-auto text-[10px]">
-                  Lente críticas
-                </Badge>
-              )}
-            </div>
-            <SebinBrainGraph
-              graph={graph}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              className="min-h-[420px] lg:min-h-[560px]"
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="min-h-0">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Detalle</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {selected ? (
-              <>
-                <DetalleNodoBrain node={selected} dia={hoy} />
-                {selected.centroId && (
-                  <div className="flex flex-col gap-2">
-                    <Button
-                      type="button"
-                      onClick={() =>
-                        navegar(
-                          `/centros/reportes/${selected.centroId}?vista=reporte&dia=${hoy}`,
-                        )
-                      }
-                    >
-                      Abrir reporte del día
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        navegar(
-                          `/centros/reportes/${selected.centroId}?vista=incidencias`,
-                        )
-                      }
-                    >
-                      Ver seguimiento
-                    </Button>
-                  </div>
-                )}
-                {selected.kind === "unidad" && selected.criticos > 0 && (
+      {/* Detalle — siempre lateral derecho, compacto */}
+      <aside className="absolute bottom-3 right-3 top-3 z-30 flex w-[14.5rem] flex-col overflow-hidden rounded-xl border border-border/70 bg-background/85 shadow-sm backdrop-blur-md">
+        <div className="flex items-center justify-between gap-1 border-b border-border/60 px-2.5 py-1.5">
+          <h2 className="text-xs font-semibold">Detalle</h2>
+          {selected && (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Cerrar detalle"
+              onClick={() => setSelectedId(null)}
+            >
+              <X className="size-3.5" />
+            </Button>
+          )}
+        </div>
+        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-2.5">
+          {selected ? (
+            <>
+              <DetalleNodoBrain node={selected} dia={hoy} />
+              {selected.centroId && (
+                <div className="flex flex-col gap-1.5">
                   <Button
                     type="button"
-                    variant="outline"
-                    className="w-full"
+                    size="sm"
                     onClick={() =>
-                      navegar("/incidencias/funcionarios?estado=seguimiento")
+                      navegar(
+                        `/centros/reportes/${selected.centroId}?vista=reporte&dia=${hoy}`,
+                      )
                     }
                   >
-                    Ver críticas en bandeja
+                    Abrir reporte
                   </Button>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Tocá un nodo: SEBIN, unidad o campamento.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      navegar(
+                        `/centros/reportes/${selected.centroId}?vista=incidencias`,
+                      )
+                    }
+                  >
+                    Seguimiento
+                  </Button>
+                </div>
+              )}
+              {selected.kind === "unidad" && selected.criticos > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() =>
+                    navegar("/incidencias/funcionarios?estado=seguimiento")
+                  }
+                >
+                  Críticas en bandeja
+                </Button>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Tocá un nodo: SEBIN, unidad o campamento.
+            </p>
+          )}
+        </div>
+      </aside>
+
+      <div className="pointer-events-none absolute bottom-3 left-3 z-30 flex max-w-[min(100%,20rem)] flex-wrap items-end gap-2">
+        <LeyendaSeveridadBrain className="pointer-events-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 backdrop-blur" />
+        {lenteCritica && (
+          <Badge variant="destructive" className="pointer-events-auto text-[10px]">
+            Lente críticas
+          </Badge>
+        )}
       </div>
     </div>
   );
@@ -270,12 +282,12 @@ function KpiChip({
         ? META_SEVERIDAD_BRAIN.critica.color
         : undefined;
   return (
-    <div className="rounded-lg border bg-card px-3 py-2">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+    <div className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-1.5">
+      <div className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
       <div
-        className="mt-0.5 text-lg font-bold tabular-nums"
+        className="mt-0.5 text-base font-bold tabular-nums leading-none"
         style={color ? { color } : undefined}
       >
         {valor}
