@@ -218,6 +218,13 @@ export function SebinBrainGraph({
     moved: boolean;
     startX: number;
     startY: number;
+    /** Touch: arrastrar nodo = pan lienzo (tap corto = click). */
+    touchPan?: boolean;
+  } | null>(null);
+  /** Pellizco activo — ignora pan de un dedo. */
+  const pinchRef = useRef<{
+    dist0: number;
+    zoom0: number;
   } | null>(null);
   const suppressClickRef = useRef(false);
   const focusTargetsRef = useRef<Map<string, Pt> | null>(null);
@@ -787,7 +794,7 @@ export function SebinBrainGraph({
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, focusUnidadId, onSelect]);
 
-  // ── drag ──────────────────────────────────────────────────────────────
+  // ── drag / pan táctil ─────────────────────────────────────────────────
   const simNode = (id: string) => nodesRef.current.find((n) => n.id === id) ?? null;
   const toSvgPoint = (clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -797,8 +804,72 @@ export function SebinBrainGraph({
     return { x: pt.x, y: pt.y };
   };
 
+  const beginPanDrag = (
+    e: React.PointerEvent,
+    captureEl: Element = e.currentTarget as Element,
+  ) => {
+    if (pinchRef.current) return;
+    try {
+      captureEl.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* best-effort */
+    }
+    panDragRef.current = {
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      originPanX: userPanRef.current.x,
+      originPanY: userPanRef.current.y,
+      moved: false,
+    };
+  };
+
+  const movePanDrag = (clientX: number, clientY: number, threshold = 3) => {
+    const drag = panDragRef.current;
+    if (!drag || pinchRef.current) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const base = baseCamRef.current;
+    const z = userZoomRef.current;
+    const worldPerPxX = base.w / z / Math.max(1, rect.width);
+    const worldPerPxY = base.h / z / Math.max(1, rect.height);
+    const dx = clientX - drag.startClientX;
+    const dy = clientY - drag.startClientY;
+    if (!drag.moved && Math.hypot(dx, dy) > threshold) drag.moved = true;
+    userPanRef.current = {
+      x: drag.originPanX - dx * worldPerPxX,
+      y: drag.originPanY - dy * worldPerPxY,
+    };
+  };
+
+  const endPanDrag = (e: React.PointerEvent, releaseEl?: Element) => {
+    const drag = panDragRef.current;
+    if (!drag) return;
+    try {
+      (releaseEl ?? (e.currentTarget as Element)).releasePointerCapture?.(
+        e.pointerId,
+      );
+    } catch {
+      /* best-effort */
+    }
+    if (drag.moved) suppressClickRef.current = true;
+    panDragRef.current = null;
+  };
+
   const onNodePointerDown = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
+    // Dedo: pan del lienzo (no rearrastrar nodos del force layout)
+    if (e.pointerType === "touch") {
+      beginPanDrag(e);
+      dragRef.current = {
+        id,
+        moved: false,
+        startX: e.clientX,
+        startY: e.clientY,
+        touchPan: true,
+      };
+      return;
+    }
     try {
       (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     } catch {
@@ -816,6 +887,11 @@ export function SebinBrainGraph({
   const onNodePointerMove = (e: React.PointerEvent, id: string) => {
     const drag = dragRef.current;
     if (!drag || drag.id !== id) return;
+    if (drag.touchPan) {
+      movePanDrag(e.clientX, e.clientY, 8);
+      if (panDragRef.current?.moved) drag.moved = true;
+      return;
+    }
     if (
       !drag.moved &&
       Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 3
@@ -833,6 +909,12 @@ export function SebinBrainGraph({
   const onNodePointerUp = (e: React.PointerEvent, id: string) => {
     const drag = dragRef.current;
     if (!drag || drag.id !== id) return;
+    if (drag.touchPan) {
+      endPanDrag(e);
+      if (drag.moved) suppressClickRef.current = true;
+      dragRef.current = null;
+      return;
+    }
     try {
       (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
     } catch {
@@ -894,17 +976,63 @@ export function SebinBrainGraph({
     setUserZoomUi(1);
   };
 
-  // wheel no-passive: preventDefault para no scrollear la página
+  // wheel + pellizco: no-passive para no scrollear la página
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
+
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 0.9 : 1.12;
       setUserZoom(userZoomRef.current * factor, { x: e.clientX, y: e.clientY });
     };
+
+    const touchDist = (t: TouchList) =>
+      Math.hypot(
+        t[0].clientX - t[1].clientX,
+        t[0].clientY - t[1].clientY,
+      );
+    const touchMid = (t: TouchList) => ({
+      x: (t[0].clientX + t[1].clientX) / 2,
+      y: (t[0].clientY + t[1].clientY) / 2,
+    });
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        e.preventDefault();
+        panDragRef.current = null;
+        dragRef.current = null;
+        const d = touchDist(e.touches);
+        if (d > 0) {
+          pinchRef.current = { dist0: d, zoom0: userZoomRef.current };
+        }
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const pinch = pinchRef.current;
+      if (e.touches.length >= 2 && pinch && pinch.dist0 > 0) {
+        e.preventDefault();
+        const d = touchDist(e.touches);
+        const mid = touchMid(e.touches);
+        setUserZoom(pinch.zoom0 * (d / pinch.dist0), mid);
+      }
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinchRef.current = null;
+    };
+
     svg.addEventListener("wheel", onWheel, { passive: false });
-    return () => svg.removeEventListener("wheel", onWheel);
+    svg.addEventListener("touchstart", onTouchStart, { passive: false });
+    svg.addEventListener("touchmove", onTouchMove, { passive: false });
+    svg.addEventListener("touchend", onTouchEnd);
+    svg.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      svg.removeEventListener("wheel", onWheel);
+      svg.removeEventListener("touchstart", onTouchStart);
+      svg.removeEventListener("touchmove", onTouchMove);
+      svg.removeEventListener("touchend", onTouchEnd);
+      svg.removeEventListener("touchcancel", onTouchEnd);
+    };
   }, []);
 
   const onBgPointerDown = (e: React.PointerEvent) => {
@@ -914,50 +1042,19 @@ export function SebinBrainGraph({
       const el = e.target as Element;
       if (!el.classList?.contains("sebin-pan-surface")) return;
     }
-    try {
-      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-    } catch {
-      /* best-effort */
-    }
-    panDragRef.current = {
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      originPanX: userPanRef.current.x,
-      originPanY: userPanRef.current.y,
-      moved: false,
-    };
+    beginPanDrag(e);
   };
 
   const onBgPointerMove = (e: React.PointerEvent) => {
-    const drag = panDragRef.current;
-    if (!drag) return;
-    const svg = svgRef.current;
-    if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const base = baseCamRef.current;
-    const z = userZoomRef.current;
-    const worldPerPxX = base.w / z / Math.max(1, rect.width);
-    const worldPerPxY = base.h / z / Math.max(1, rect.height);
-    const dx = e.clientX - drag.startClientX;
-    const dy = e.clientY - drag.startClientY;
-    if (!drag.moved && Math.hypot(dx, dy) > 3) drag.moved = true;
-    // arrastrar el lienzo: el contenido sigue el dedo
-    userPanRef.current = {
-      x: drag.originPanX - dx * worldPerPxX,
-      y: drag.originPanY - dy * worldPerPxY,
-    };
+    movePanDrag(
+      e.clientX,
+      e.clientY,
+      e.pointerType === "touch" ? 8 : 3,
+    );
   };
 
   const onBgPointerUp = (e: React.PointerEvent) => {
-    const drag = panDragRef.current;
-    if (!drag) return;
-    try {
-      (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
-    } catch {
-      /* best-effort */
-    }
-    if (drag.moved) suppressClickRef.current = true;
-    panDragRef.current = null;
+    endPanDrag(e);
   };
 
   const onNodeClick = (n: SebinBrainNode) => {
@@ -1372,9 +1469,9 @@ export function SebinBrainGraph({
       <svg
         ref={svgRef}
         viewBox={`0 0 ${VB_W} ${VB_H}`}
-        className="sebin-brain-graph relative z-[1] block h-full w-full cursor-grab select-none active:cursor-grabbing"
+        className="sebin-brain-graph relative z-[1] block h-full w-full cursor-grab select-none touch-none active:cursor-grabbing"
         role="img"
-        aria-label="Grafo operativo SEBIN. Rueda = zoom, arrastrar fondo = pan."
+        aria-label="Grafo operativo SEBIN. Arrastrar = pan, pellizcar = zoom."
         onClick={() => {
           if (suppressClickRef.current) {
             suppressClickRef.current = false;
@@ -1385,6 +1482,7 @@ export function SebinBrainGraph({
         onPointerDown={onBgPointerDown}
         onPointerMove={onBgPointerMove}
         onPointerUp={onBgPointerUp}
+        onPointerCancel={onBgPointerUp}
       >
         {/* superficie de pan (fondo) */}
         <rect
@@ -1835,6 +1933,7 @@ export function SebinBrainGraph({
                   onPointerDown={(e) => onNodePointerDown(e, n.id)}
                   onPointerMove={(e) => onNodePointerMove(e, n.id)}
                   onPointerUp={(e) => onNodePointerUp(e, n.id)}
+                  onPointerCancel={(e) => onNodePointerUp(e, n.id)}
                   onClick={(e) => {
                     e.stopPropagation();
                     onNodeClick(n);

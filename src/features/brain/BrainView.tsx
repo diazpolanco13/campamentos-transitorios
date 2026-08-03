@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Inbox, Siren } from "lucide-react";
+import { Inbox, Info, Siren } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Sesion } from "@/data/authSupabase";
 import { useSupabaseQuery } from "@/data/useSupabaseQuery";
@@ -45,6 +45,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { BotonBorrarCache } from "@/components/BotonBorrarCache";
 import { ControlesMapaFlotantes } from "@/features/centros/ControlesMapaFlotantes";
 import { PanelCentros, calcularEstadosFilas } from "@/features/centros/PanelCentros";
 import {
@@ -79,6 +80,8 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
   const [expandidos, setExpandidos] = useState<Set<ClaveUnidadSebin>>(
     () => new Set(),
   );
+  /** Móvil: leyenda colapsada para liberar lienzo táctil. */
+  const [leyendaMovilAbierta, setLeyendaMovilAbierta] = useState(false);
 
   const filasCentros = useSupabaseQuery<CentroFila, FilaSync<CentroTransitorio>>(
     "centros",
@@ -331,11 +334,11 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
         onCambiarAbierto={setPanelCentrosAbierto}
       />
 
-      {/* KPIs overview: arriba izq. Con foco/detalle van al stack inferior. */}
-      {!chromeSuperiorOcupado && !(panelCentrosAbierto && esMovil) && (
+      {/* KPIs: solo desktop — en móvil liberan el lienzo para el dedo */}
+      {!esMovil && !chromeSuperiorOcupado && (
         <div
           className={cn(
-            "map-controls-overlay pointer-events-none absolute inset-x-3 bottom-3 z-30 md:inset-x-auto md:bottom-auto md:right-36 md:top-3",
+            "map-controls-overlay pointer-events-none absolute z-30 md:right-36 md:top-3",
             panelCentrosAbierto
               ? "md:left-[calc(min(21rem,86vw)+0.75rem)]"
               : "md:left-14",
@@ -344,16 +347,30 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
           <TotalesBrain resumen={resumen} />
         </div>
       )}
+      {!esMovil && chromeSuperiorOcupado && (
+        <div className="map-controls-overlay pointer-events-none absolute bottom-3 left-3 z-30">
+          <TotalesBrain resumen={resumen} />
+        </div>
+      )}
 
-      {/* Filtros: bajo zoom; ocultos en móvil si lista abierta */}
+      {/* Filtros: desktop bajo zoom; móvil abajo-derecha (no tapa centro) */}
       {!(panelCentrosAbierto && esMovil) && (
       <TooltipProvider delayDuration={200}>
         <div
-          className="map-controls-overlay pointer-events-none absolute z-30"
-          style={{
-            top: "var(--sebin-under-zoom)",
-            right: "max(0.75rem, var(--sebin-chrome-right, 0.75rem))",
-          }}
+          className={cn(
+            "map-controls-overlay pointer-events-none absolute z-30",
+            esMovil
+              ? "bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-3"
+              : undefined,
+          )}
+          style={
+            esMovil
+              ? undefined
+              : {
+                  top: "var(--sebin-under-zoom)",
+                  right: "max(0.75rem, var(--sebin-chrome-right, 0.75rem))",
+                }
+          }
         >
           <ButtonGroup
             orientation="vertical"
@@ -403,6 +420,10 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
                 Bandeja
               </TooltipContent>
             </Tooltip>
+            <BotonBorrarCache
+              variante="mapa"
+              className="text-red-500 hover:bg-red-500/10 hover:text-red-500"
+            />
           </ButtonGroup>
         </div>
       </TooltipProvider>
@@ -486,10 +507,37 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
       </Sheet>
 
       {!(panelCentrosAbierto && esMovil) && (
-      <div className="pointer-events-none absolute bottom-3 left-3 z-30 flex max-w-[min(100%,calc(100%-6rem))] flex-col items-start gap-2">
-        {chromeSuperiorOcupado && <TotalesBrain resumen={resumen} />}
+      <div
+        className={cn(
+          "pointer-events-none absolute z-30 flex max-w-[min(100%,calc(100%-5.5rem))] flex-col items-start gap-2",
+          esMovil
+            ? "bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3"
+            : "bottom-3 left-3",
+        )}
+      >
         <div className="flex max-w-full flex-wrap items-end gap-2">
-          <LeyendaSeveridadBrain className="pointer-events-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 backdrop-blur" />
+          {esMovil ? (
+            <>
+              <Button
+                type="button"
+                variant={leyendaMovilAbierta ? "secondary" : "outline"}
+                size="icon"
+                className="pointer-events-auto size-10 shrink-0 rounded-xl border border-border bg-card shadow-lg"
+                aria-label={
+                  leyendaMovilAbierta ? "Ocultar leyenda" : "Ver leyenda"
+                }
+                aria-expanded={leyendaMovilAbierta}
+                onClick={() => setLeyendaMovilAbierta((v) => !v)}
+              >
+                <Info className="size-4" />
+              </Button>
+              {leyendaMovilAbierta && (
+                <LeyendaSeveridadBrain className="pointer-events-auto rounded-md border border-border/70 bg-background/90 px-2 py-1 shadow-lg backdrop-blur" />
+              )}
+            </>
+          ) : (
+            <LeyendaSeveridadBrain className="pointer-events-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 backdrop-blur" />
+          )}
           {lenteCritica && (
             <Badge
               variant="destructive"

@@ -267,8 +267,10 @@ export function App() {
   // En reporte diario el FAB tapa la barra de fases móvil.
   const enReporteDiario =
     new URLSearchParams(location.search).get("reportar") === "1";
-  /** En móvil + mapa el botón va en la columna de controles, no como FAB. */
-  const mostrarFabCache = !(esMovil && enMapa) && !enReporteDiario;
+  const enBrain = location.pathname.startsWith("/brain");
+  /** Mapa móvil / brain: botón en controles; no FAB suelto. */
+  const mostrarFabCache =
+    !(esMovil && enMapa) && !enReporteDiario && !enBrain;
 
   useEffect(() => {
     const esPlanillaPublica =
