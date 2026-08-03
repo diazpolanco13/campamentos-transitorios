@@ -277,6 +277,12 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
           : undefined;
 
   const panelEscritorio = Boolean(selected) && !esMovil;
+  /**
+   * Móvil: sheet solo en campamento (acciones). Unidad/SEBIN = foco/navegación
+   * sin tapar el grafo.
+   */
+  const sheetMovil =
+    Boolean(selected) && esMovil && selected?.kind === "campamento";
   /** Top ocupado: KPI/migas o foco — liberar zona superior del lienzo. */
   const chromeSuperiorOcupado = Boolean(focusUnidadId) || panelEscritorio;
 
@@ -431,9 +437,9 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
         </PanelFlotante>
       )}
 
-      {/* Móvil: bottom sheet — grafo sigue visible arriba */}
+      {/* Móvil: sheet solo campamento — unidad se navega sin modal */}
       <Sheet
-        open={Boolean(selected) && esMovil}
+        open={sheetMovil}
         onOpenChange={(open) => {
           if (!open) cerrarDetalle();
         }}

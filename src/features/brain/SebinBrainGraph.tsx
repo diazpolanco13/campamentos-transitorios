@@ -993,8 +993,10 @@ export function SebinBrainGraph({
   const focusIdx = focusUnidadId ? unidadOrder.indexOf(focusUnidadId) : -1;
 
   const volverAUnidad = () => {
+    // Vuelve al foco unidad sin forzar panel/sheet (selección = unidad o limpia camp)
     if (focusNodeMeta) onSelect(focusNodeMeta);
   };
+  /** Carrusel: cambia foco. Móvil no abre sheet (solo campamentos). */
   const goUnidad = (dir: -1 | 1) => {
     if (unidadOrder.length === 0) return;
     const i =
@@ -1004,8 +1006,8 @@ export function SebinBrainGraph({
     const id = unidadOrder[i];
     setFocusUnidadId(id);
     const node = byId.get(id);
+    // Selecciona unidad p/ highlight + panel desktop; sheet móvil ignora unidades
     if (node) onSelect(node);
-    // no reset zoom — la rueda gira bajo la cámara
   };
 
   const rimOffsetOf = (unidadId: string): number | null => {
@@ -1314,9 +1316,9 @@ export function SebinBrainGraph({
             size="icon"
             aria-label="Unidad anterior"
             onClick={() => goUnidad(-1)}
-            className="absolute left-3 top-1/2 z-30 size-12 -translate-y-1/2 rounded-full border-2 border-border bg-background text-foreground shadow-lg hover:bg-accent md:left-4 md:size-14"
+            className="absolute left-2 top-1/2 z-30 size-10 -translate-y-1/2 rounded-full border-2 border-border bg-background/90 text-foreground shadow-lg hover:bg-accent md:left-4 md:size-14"
           >
-            <ArrowLeft className="size-6 md:size-7" />
+            <ArrowLeft className="size-5 md:size-7" />
           </Button>
           <Button
             type="button"
@@ -1324,9 +1326,9 @@ export function SebinBrainGraph({
             size="icon"
             aria-label="Unidad siguiente"
             onClick={() => goUnidad(1)}
-            className="absolute right-3 top-1/2 z-[45] size-12 -translate-y-1/2 rounded-full border-2 border-border bg-background text-foreground shadow-lg hover:bg-accent md:right-4 md:size-14"
+            className="absolute right-2 top-1/2 z-[45] size-10 -translate-y-1/2 rounded-full border-2 border-border bg-background/90 text-foreground shadow-lg hover:bg-accent md:right-4 md:size-14"
           >
-            <ArrowRight className="size-6 md:size-7" />
+            <ArrowRight className="size-5 md:size-7" />
           </Button>
         </>
       )}
