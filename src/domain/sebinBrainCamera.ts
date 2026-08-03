@@ -1,7 +1,6 @@
 /**
  * Cámara cinematic (contrato FounderOS cameraRect/lerpRect).
- * En foco de unidad: enmarca el árbol completo — no zoom al hub.
- * Zoom estrecho solo si el seleccionado es un campamento.
+ * En foco: enmarca el árbol compacto centrado — SEBIN alineado con unidad.
  */
 
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -17,8 +16,8 @@ export type CameraState = {
   focusBounds?: Bounds | null;
 };
 
-const ZOOM_NODE = 0.48;
-const ZOOM_FOCUS = 0.88;
+const ZOOM_NODE = 0.42;
+const ZOOM_FOCUS = 0.78;
 const ZOOM_OUT_PAD = 0.06;
 
 const round2 = (n: number): number => {
@@ -29,48 +28,62 @@ const round2 = (n: number): number => {
 function frameOn(view: ViewSize, c: Pt, frac: number): Rect {
   const w = view.w * frac;
   const h = w * (view.h / view.w);
-  const x = Math.max(0, Math.min(view.w - w, c.x - w / 2));
-  const y = Math.max(0, Math.min(view.h - h, c.y - h / 2));
+  const x = c.x - w / 2;
+  const y = c.y - h / 2;
   return { x: round2(x), y: round2(y), w: round2(w), h: round2(h) };
 }
 
-/** Enmarca bounds con padding fraccional; mantiene aspect del canvas. */
+/** Enmarca bounds; centra el bloque en el viewport (no pega abajo). */
 function frameBounds(view: ViewSize, b: Bounds, padFrac: number): Rect {
-  const padX = (b.maxX - b.minX) * padFrac + view.w * 0.04;
+  const padX = (b.maxX - b.minX) * padFrac + view.w * 0.03;
   const padY = (b.maxY - b.minY) * padFrac + view.h * 0.04;
-  let x = b.minX - padX;
-  let y = b.minY - padY;
   let w = b.maxX - b.minX + padX * 2;
   let h = b.maxY - b.minY + padY * 2;
   const aspect = view.w / view.h;
   if (w / h > aspect) {
-    const nh = w / aspect;
-    y -= (nh - h) / 2;
-    h = nh;
+    h = w / aspect;
   } else {
-    const nw = h * aspect;
-    x -= (nw - w) / 2;
-    w = nw;
+    w = h * aspect;
   }
-  // no más chico que ZOOM_FOCUS del canvas
-  const minW = view.w * 0.55;
+  // zoom un poco más cerca que antes (nombres legibles)
+  const maxW = view.w * 0.92;
+  if (w > maxW) {
+    const s = maxW / w;
+    w = maxW;
+    h *= s;
+  }
+  const minW = view.w * 0.62;
   if (w < minW) {
-    x -= (minW - w) / 2;
-    const nh = minW / aspect;
-    y -= (nh - h) / 2;
+    const s = minW / w;
     w = minW;
-    h = nh;
+    h *= s;
   }
-  return { x: round2(x), y: round2(y), w: round2(w), h: round2(h) };
+  const cx = (b.minX + b.maxX) / 2;
+  const cy = (b.minY + b.maxY) / 2;
+  return {
+    x: round2(cx - w / 2),
+    y: round2(cy - h / 2),
+    w: round2(w),
+    h: round2(h),
+  };
 }
 
 export function cameraRect(view: ViewSize, s: CameraState): Rect {
-  // zoom nodo solo en camp — si no, el árbol queda cortado (bug del MVP)
   if (s.selectedKind === "campamento" && s.selectedNodePos) {
     return frameOn(view, s.selectedNodePos, ZOOM_NODE);
   }
   if (s.focusedUnidad) {
-    if (s.focusBounds) return frameBounds(view, s.focusBounds, 0.12);
+    // prioriza centro en la unidad (eje vertical mid-pantalla)
+    if (s.focusBounds && s.focusCenter) {
+      const framed = frameBounds(view, s.focusBounds, 0.08);
+      // re-centrar horizontal/vertical en focusCenter (tronco al medio)
+      return {
+        ...framed,
+        x: round2(s.focusCenter.x - framed.w / 2),
+        y: round2(s.focusCenter.y - framed.h / 2),
+      };
+    }
+    if (s.focusBounds) return frameBounds(view, s.focusBounds, 0.08);
     if (s.focusCenter) return frameOn(view, s.focusCenter, ZOOM_FOCUS);
   }
   if (s.selectedNodePos) return frameOn(view, s.selectedNodePos, ZOOM_NODE);
@@ -98,5 +111,5 @@ export function lerpRect(cur: Rect, target: Rect, t: number): Rect {
   };
 }
 
-export const CAM_EASE = 0.12;
-export const CAM_EASE_HOME = 0.08;
+export const CAM_EASE = 0.055;
+export const CAM_EASE_HOME = 0.045;
