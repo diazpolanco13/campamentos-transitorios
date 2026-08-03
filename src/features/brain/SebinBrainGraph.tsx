@@ -54,6 +54,7 @@ import {
   Scan,
   X,
 } from "lucide-react";
+import type { FiltroReporteBrain } from "./FiltrosReporteBrain";
 import { SebinNeuralCore } from "./SebinNeuralCore";
 
 const USER_ZOOM_MIN = 0.35;
@@ -192,6 +193,8 @@ export function SebinBrainGraph({
   focusUnidadId,
   onFocusUnidadIdChange,
   ocultarChromeFlotante = false,
+  /** Incrementar desde padre: expandir red + zoom/pan a home. */
+  vistaResetKey = 0,
   className,
 }: {
   graph: SebinBrainGraph;
@@ -202,6 +205,7 @@ export function SebinBrainGraph({
   onFocusUnidadIdChange: (id: string | null) => void;
   /** Oculta zoom/migas/flechas (p. ej. panel lista abierto en móvil). */
   ocultarChromeFlotante?: boolean;
+  vistaResetKey?: number;
   className?: string;
 }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -1067,6 +1071,13 @@ export function SebinBrainGraph({
     userPanRef.current = { x: 0, y: 0 };
     setUserZoomUi(1);
   };
+
+  /** Padre pide home: red expandida + cámara centrada. */
+  useEffect(() => {
+    if (vistaResetKey === 0) return;
+    setRedExpandida(true);
+    resetUserView();
+  }, [vistaResetKey]);
 
   // wheel + pellizco: no-passive para no scrollear la página
   useEffect(() => {
@@ -2273,26 +2284,69 @@ export function SebinBrainGraph({
   );
 }
 
+const LEYENDA_FILTRO: {
+  severidad: SeveridadBrain;
+  filtro: FiltroReporteBrain;
+}[] = [
+  { severidad: "ok", filtro: "completo" },
+  { severidad: "parcial", filtro: "parcial" },
+  { severidad: "pendiente", filtro: "incompleto" },
+  { severidad: "critica", filtro: "critica" },
+];
+
+/** Cinta de estados → botones toggle (OR). Vacío = todos. */
 export function LeyendaSeveridadBrain({
   className,
+  filtros,
+  onAlternar,
 }: {
   className?: string;
+  filtros: ReadonlySet<FiltroReporteBrain>;
+  onAlternar: (f: FiltroReporteBrain) => void;
 }) {
-  const items: SeveridadBrain[] = ["ok", "parcial", "pendiente", "critica"];
   return (
-    <div className={cn("flex flex-wrap items-center gap-3", className)}>
-      {items.map((s) => (
-        <div
-          key={s}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground"
-        >
-          <span
-            className="inline-block size-2.5 rounded-full"
-            style={{ background: META_SEVERIDAD_BRAIN[s].color }}
-          />
-          {META_SEVERIDAD_BRAIN[s].label}
-        </div>
-      ))}
+    <div
+      role="group"
+      aria-label="Filtrar por estado de reporte"
+      className={cn("flex flex-wrap items-center gap-1.5", className)}
+    >
+      {LEYENDA_FILTRO.map(({ severidad, filtro }) => {
+        const meta = META_SEVERIDAD_BRAIN[severidad];
+        const activo = filtros.has(filtro);
+        return (
+          <Button
+            key={filtro}
+            type="button"
+            size="sm"
+            variant={activo ? "secondary" : "outline"}
+            aria-pressed={activo}
+            aria-label={`Filtrar: ${meta.label}`}
+            onClick={() => onAlternar(filtro)}
+            className={cn(
+              "h-8 gap-1.5 border px-2.5 text-xs shadow-none",
+              activo
+                ? "font-medium"
+                : "bg-background/80 text-muted-foreground hover:text-foreground",
+            )}
+            style={
+              activo
+                ? {
+                    color: meta.color,
+                    background: `color-mix(in oklab, ${meta.color} 18%, transparent)`,
+                    borderColor: `color-mix(in oklab, ${meta.color} 55%, transparent)`,
+                  }
+                : undefined
+            }
+          >
+            <span
+              className="inline-block size-2.5 shrink-0 rounded-full"
+              style={{ background: meta.color }}
+              aria-hidden
+            />
+            {meta.label}
+          </Button>
+        );
+      })}
     </div>
   );
 }

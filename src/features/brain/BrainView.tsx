@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Inbox, Info, Siren } from "lucide-react";
+import { FilterX, Inbox, Info, Siren } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Sesion } from "@/data/authSupabase";
 import { useSupabaseQuery } from "@/data/useSupabaseQuery";
@@ -28,7 +28,6 @@ import {
   type SebinBrainNode,
 } from "@/domain/sebinBrainGraph";
 import { PanelFlotante } from "@/components/PanelFlotante";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import {
@@ -82,6 +81,8 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
   );
   /** Móvil: leyenda colapsada para liberar lienzo táctil. */
   const [leyendaMovilAbierta, setLeyendaMovilAbierta] = useState(false);
+  /** Incrementar → SebinBrainGraph expande + centra cámara. */
+  const [vistaResetKey, setVistaResetKey] = useState(0);
 
   const filasCentros = useSupabaseQuery<CentroFila, FilaSync<CentroTransitorio>>(
     "centros",
@@ -211,11 +212,21 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
     });
   }
 
+  /** Quita estado/unidad/foco/selección y centra zoom+pan. */
+  function limpiarFiltrosYCentrar() {
+    setFiltrosReporte(new Set());
+    setUnidadesFiltro(new Set());
+    setFocusUnidadId(null);
+    setSelectedId(null);
+    setVistaResetKey((k) => k + 1);
+  }
+
   const lenteCritica = filtrosReporte.has("critica");
-  const hayFiltroReporteEstado =
-    filtrosReporte.has("completo") ||
-    filtrosReporte.has("parcial") ||
-    filtrosReporte.has("incompleto");
+  const hayFiltrosActivos =
+    filtrosReporte.size > 0 ||
+    unidadesFiltro.size > 0 ||
+    focusUnidadId != null ||
+    selectedId != null;
 
   function setExpandido(clave: ClaveUnidadSebin, abierto: boolean) {
     setExpandidos((prev) => {
@@ -308,6 +319,7 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
         focusUnidadId={focusUnidadId}
         onFocusUnidadIdChange={setFocusUnidadId}
         ocultarChromeFlotante={panelCentrosAbierto && esMovil}
+        vistaResetKey={vistaResetKey}
         className="h-full w-full"
       />
 
@@ -509,13 +521,43 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
       {!(panelCentrosAbierto && esMovil) && (
       <div
         className={cn(
-          "pointer-events-none absolute z-30 flex max-w-[min(100%,calc(100%-5.5rem))] flex-col items-start gap-2",
+          // anclado inferior-derecha siempre — no usar --sebin-chrome-right
+          // (al abrir panel/KPI eso empujaba la cinta al centro y tapaba TotalesBrain)
+          "pointer-events-none absolute z-30 flex flex-col items-end gap-2",
           esMovil
-            ? "bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3"
-            : "bottom-3 left-3",
+            ? "bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-14 max-w-[min(100%,calc(100%-5.5rem))]"
+            : cn(
+                "bottom-3 right-3",
+                // con KPI abajo-izq (foco/detalle), deja hueco a la izquierda
+                chromeSuperiorOcupado
+                  ? "max-w-[min(100%,calc(100%-16rem))]"
+                  : "max-w-[min(100%,calc(100%-5.5rem))]",
+              ),
         )}
       >
-        <div className="flex max-w-full flex-wrap items-end gap-2">
+        <div className="flex max-w-full flex-wrap items-end justify-end gap-2">
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant={hayFiltrosActivos ? "secondary" : "outline"}
+                  size="icon"
+                  className={cn(
+                    "pointer-events-auto size-10 shrink-0 rounded-xl border border-border bg-card shadow-lg",
+                    hayFiltrosActivos && "bg-primary/15 text-primary",
+                  )}
+                  aria-label="Quitar filtros y centrar grafo"
+                  onClick={limpiarFiltrosYCentrar}
+                >
+                  <FilterX className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8}>
+                Quitar filtros y centrar
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           {esMovil ? (
             <>
               <Button
@@ -524,7 +566,7 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
                 size="icon"
                 className="pointer-events-auto size-10 shrink-0 rounded-xl border border-border bg-card shadow-lg"
                 aria-label={
-                  leyendaMovilAbierta ? "Ocultar leyenda" : "Ver leyenda"
+                  leyendaMovilAbierta ? "Ocultar filtros de estado" : "Filtrar por estado"
                 }
                 aria-expanded={leyendaMovilAbierta}
                 onClick={() => setLeyendaMovilAbierta((v) => !v)}
@@ -532,33 +574,19 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
                 <Info className="size-4" />
               </Button>
               {leyendaMovilAbierta && (
-                <LeyendaSeveridadBrain className="pointer-events-auto rounded-md border border-border/70 bg-background/90 px-2 py-1 shadow-lg backdrop-blur" />
+                <LeyendaSeveridadBrain
+                  filtros={filtrosReporte}
+                  onAlternar={alternarFiltroReporte}
+                  className="pointer-events-auto rounded-xl border border-border/70 bg-background/90 p-1.5 shadow-lg backdrop-blur"
+                />
               )}
             </>
           ) : (
-            <LeyendaSeveridadBrain className="pointer-events-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 backdrop-blur" />
-          )}
-          {lenteCritica && (
-            <Badge
-              variant="destructive"
-              className="pointer-events-auto text-[10px]"
-            >
-              Críticas
-            </Badge>
-          )}
-          {hayFiltroReporteEstado && (
-            <Badge
-              variant="secondary"
-              className="pointer-events-auto text-[10px]"
-            >
-              {[
-                filtrosReporte.has("completo") && "Completos",
-                filtrosReporte.has("parcial") && "Parciales",
-                filtrosReporte.has("incompleto") && "Sin reporte",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </Badge>
+            <LeyendaSeveridadBrain
+              filtros={filtrosReporte}
+              onAlternar={alternarFiltroReporte}
+              className="pointer-events-auto rounded-xl border border-border/70 bg-background/80 p-1.5 shadow-lg backdrop-blur"
+            />
           )}
         </div>
       </div>
