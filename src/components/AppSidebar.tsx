@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   MapPinned,
   MonitorPlay,
+  Network,
   ScrollText,
   Settings,
   Shield,
@@ -298,6 +299,12 @@ function NavContenido({ sesion }: Props) {
               icono={MonitorPlay}
               label="Pantalla"
               activo={rutaActiva(pathname, "/dashboard")}
+            />
+            <ItemMenu
+              to="/brain"
+              icono={Network}
+              label="Brain SEBIN"
+              activo={rutaActiva(pathname, "/brain")}
             />
           </SidebarMenu>
         </SidebarGroupContent>

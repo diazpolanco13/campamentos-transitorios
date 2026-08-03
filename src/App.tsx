@@ -13,6 +13,7 @@ import { señalarAppObsoleta, esErrorModuloObsoleto } from "./lib/avisoAppObsole
 import { rutaInicialDeRol, rutaPermitidaParaRol } from "./domain/permisos";
 import { useIsMobile } from "./hooks/use-mobile";
 import { DashboardViewSkeleton } from "./features/dashboard/DashboardViewSkeleton";
+import { BrainViewSkeleton } from "./features/brain/BrainViewSkeleton";
 import { MapaSectionSkeleton } from "./features/centros/MapaSectionSkeleton";
 import { TableroCampamentosSkeleton } from "./features/centros/TableroCampamentosSkeleton";
 import { TablaRedSkeleton } from "./features/centros/TablaRedSkeleton";
@@ -33,6 +34,7 @@ const importCentrosView = () => import("./features/centros/CentrosView");
 const importFichaCentroView = () => import("./features/centros/FichaCentroView");
 const importNuevoCentroView = () => import("./features/centros/NuevoCentroView");
 const importDashboardView = () => import("./features/dashboard/DashboardView");
+const importBrainView = () => import("./features/brain/BrainView");
 const importIncidenciasRedirect = () => import("./features/incidencias/IncidenciasRedirect");
 const importIncidenciasLayout = () => import("./features/incidencias/IncidenciasLayout");
 const importIncidenciasFuncionariosView = () =>
@@ -75,6 +77,9 @@ const NuevoCentroView = lazy(() =>
 );
 const DashboardView = lazy(() =>
   importDashboardView().then((m) => ({ default: m.DashboardView })),
+);
+const BrainView = lazy(() =>
+  importBrainView().then((m) => ({ default: m.BrainView })),
 );
 const IncidenciasRedirect = lazy(() =>
   importIncidenciasRedirect().then((m) => ({ default: m.IncidenciasRedirect })),
@@ -201,6 +206,7 @@ function precargarRutaInicial(pathname: string): Promise<unknown> {
   if (pathname.startsWith("/registro") || pathname.startsWith("/censo"))
     return importCensoView();
   if (pathname.startsWith("/dashboard")) return importDashboardView();
+  if (pathname.startsWith("/brain")) return importBrainView();
   if (pathname.startsWith("/centros/tablero")) return importCentrosView();
   if (/^\/centros\/reportes\/[^/]+/.test(pathname)) return importFichaCentroView();
   if (pathname.startsWith("/centros/reportes")) return importReportesDiariosRedView();
@@ -335,6 +341,14 @@ export function App() {
           }
         >
           <Route path="/" element={<Navigate to="/centros/mapa" replace />} />
+          <Route
+            path="/brain"
+            element={
+              <RutaConSkeleton fallback={<BrainViewSkeleton />}>
+                <BrainView sesion={sesion} />
+              </RutaConSkeleton>
+            }
+          />
           <Route
             path="/centros/mapa"
             element={

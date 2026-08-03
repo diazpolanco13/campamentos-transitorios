@@ -187,6 +187,10 @@ export function migasPanDeRuta(
     return migasCentro(pathname, searchParams, centro);
   }
 
+  if (pathname === "/brain") {
+    return [INICIO, { label: "Brain SEBIN" }];
+  }
+
   if (pathname.startsWith("/incidencias")) {
     const migas: MigaPan[] = [INICIO, INCIDENCIAS];
     if (pathname === "/incidencias/funcionarios") {
