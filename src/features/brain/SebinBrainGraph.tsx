@@ -1530,6 +1530,16 @@ export function SebinBrainGraph({
             from { opacity: 0.22; }
             to { opacity: 0.55; }
           }
+          @keyframes sebin-crit-ring-pulse {
+            from {
+              opacity: 0.5;
+              stroke-width: 2;
+            }
+            to {
+              opacity: 1;
+              stroke-width: 3.4;
+            }
+          }
           @keyframes sebin-core-breathe {
             from { opacity: 0.045; }
             to { opacity: 0.14; }
@@ -1543,6 +1553,9 @@ export function SebinBrainGraph({
           }
           .sebin-crit-halo {
             animation: sebin-glow-breathe 2.8s ease-in-out infinite alternate;
+          }
+          .sebin-crit-ring {
+            animation: sebin-crit-ring-pulse 1.5s ease-in-out infinite alternate;
           }
           .sebin-ray {
             stroke-dasharray: 5 5;
@@ -1563,8 +1576,9 @@ export function SebinBrainGraph({
             animation: sebin-grow 1.1s ease forwards;
           }
           @media (prefers-reduced-motion: reduce) {
-            .sebin-core-glow, .sebin-crit-halo, .sebin-ray,
+            .sebin-core-glow, .sebin-crit-halo, .sebin-crit-ring, .sebin-ray,
             .sebin-dash, .sebin-grow { animation: none; }
+            .sebin-crit-ring { opacity: 0.9; stroke-width: 2.6; }
             .sebin-grow { stroke-dashoffset: 0; }
           }
         `}</style>
@@ -1939,11 +1953,24 @@ export function SebinBrainGraph({
                     onNodeClick(n);
                   }}
                 >
-                  {n.severidad === "critica" && !fade && n.kind !== "sebin" && (
+                  {/* Camp: halo suave. Unidad con críticas: solo aro rojo (núcleo intacto). */}
+                  {n.kind === "campamento" &&
+                    n.severidad === "critica" &&
+                    !fade && (
+                      <circle
+                        r={r + 14}
+                        fill="url(#critHalo)"
+                        className="sebin-crit-halo"
+                        style={{ pointerEvents: "none" }}
+                      />
+                    )}
+                  {n.kind === "unidad" && n.criticos > 0 && (
                     <circle
-                      r={r + 14}
-                      fill="url(#critHalo)"
-                      className="sebin-crit-halo"
+                      r={r + 5.5}
+                      fill="none"
+                      stroke={META_SEVERIDAD_BRAIN.critica.color}
+                      strokeWidth={2.4}
+                      className="sebin-crit-ring"
                       style={{ pointerEvents: "none" }}
                     />
                   )}
@@ -1976,7 +2003,8 @@ export function SebinBrainGraph({
                       stroke="var(--background)"
                       strokeWidth={isFocusHub ? 2 : 1.4}
                       filter={
-                        n.severidad === "critica" || isFocusHub
+                        isFocusHub ||
+                        (n.kind !== "unidad" && n.severidad === "critica")
                           ? "url(#brainSoftGlow)"
                           : undefined
                       }
