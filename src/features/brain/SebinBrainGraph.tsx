@@ -104,6 +104,21 @@ function shortLabel(n: SebinBrainNode): string {
   return n.label;
 }
 
+/** Label de camp en abanico: denso → N.º o nombre muy corto; hover → nombre. */
+function campFanLabel(
+  n: SebinBrainNode,
+  opts: { dense: boolean; emphasize: boolean },
+): string {
+  if (opts.emphasize || !opts.dense) {
+    if (n.label.length > 16) return `${n.label.slice(0, 14).trimEnd()}…`;
+    return n.label;
+  }
+  // denso: N.° cabe; si no, nombre ≤10
+  if (n.sublabel && /^N\.?\s*°?\s*\d/i.test(n.sublabel)) return n.sublabel;
+  if (n.label.length > 10) return `${n.label.slice(0, 9).trimEnd()}…`;
+  return n.label;
+}
+
 function hashStr(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -1671,18 +1686,23 @@ export function SebinBrainGraph({
               const sevColor = META_SEVERIDAD_BRAIN[n.severidad].color;
               const fill = n.kind === "unidad" ? n.color : sevColor;
               const showUnidadLabel = n.kind === "unidad";
-              // labels solo si hay espacio (≥64px) o hover/sel — nunca blob
-              // denso (10+): NUNCA labels automáticos — solo hover/sel
+              // apex: siempre label (corto si denso); home radial: solo hover/sel
               const showCampLabel =
                 n.kind === "campamento" &&
-                (isHover ||
-                  isSel ||
-                  (inApexCamp && focusLayout?.labelsReadable === true));
+                (inApexCamp || isHover || isSel);
+              const denseFan = !!focusLayout?.dense || !focusLayout?.labelsReadable;
+              const apexCampIdx =
+                inApexCamp && focusUnidadId
+                  ? (campsOf.get(focusUnidadId) ?? []).findIndex(
+                      (c) => c.id === n.id,
+                    )
+                  : -1;
               const campName =
                 n.kind === "campamento"
-                  ? n.label.length > 16
-                    ? `${n.label.slice(0, 14).trimEnd()}…`
-                    : n.label
+                  ? campFanLabel(n, {
+                      dense: denseFan && inApexCamp && !isHover && !isSel,
+                      emphasize: isHover || isSel,
+                    })
                   : "";
               return (
                 <g
@@ -1779,19 +1799,26 @@ export function SebinBrainGraph({
                   )}
                   {showCampLabel && (
                     <text
-                      y={r + (inApexCamp ? 12 : 11)}
+                      y={
+                        r +
+                        11 +
+                        (inApexCamp && denseFan && apexCampIdx >= 0
+                          ? (apexCampIdx % 2) * 9
+                          : 0)
+                      }
                       textAnchor="middle"
                       style={{
-                        fontSize: inApexCamp
-                          ? (focusLayout?.limbs.length ?? 0) > 12
-                            ? 7
-                            : 8.5
-                          : 8,
-                        fontWeight: 600,
+                        fontSize:
+                          isHover || isSel
+                            ? 8.5
+                            : inApexCamp && denseFan
+                              ? 6.5
+                              : 8,
+                        fontWeight: isHover || isSel ? 700 : 600,
                         fontFamily:
                           "ui-monospace, SFMono-Regular, Menlo, monospace",
                         fill: "var(--foreground)",
-                        opacity: inApexCamp ? 0.92 : 1,
+                        opacity: isHover || isSel ? 1 : 0.88,
                         pointerEvents: "none",
                       }}
                     >
