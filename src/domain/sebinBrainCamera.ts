@@ -16,10 +16,16 @@ export type CameraState = {
   focusUnidadPos?: Pt | null;
   focusCenter?: Pt | null;
   focusBounds?: Bounds | null;
+  /** Solo núcleo SEBIN (vista inicial cerebro). */
+  coreSolo?: boolean;
+  /** Posición del núcleo (centro del lienzo). */
+  corePos?: Pt | null;
 };
 
 const ZOOM_NODE = 0.42;
 const ZOOM_FOCUS = 0.78;
+/** Núcleo solo: fracción pequeña = cerebro grande y centrado. */
+const ZOOM_CORE = 0.34;
 const ZOOM_OUT_PAD = 0.06;
 /**
  * Ancla el borde inferior del árbol cerca del bottom, con margen para que
@@ -76,6 +82,10 @@ function frameBounds(view: ViewSize, b: Bounds, padFrac: number): Rect {
 }
 
 export function cameraRect(view: ViewSize, s: CameraState): Rect {
+  if (s.coreSolo) {
+    const c = s.corePos ?? { x: view.w / 2, y: view.h / 2 };
+    return frameOn(view, c, ZOOM_CORE);
+  }
   if (s.selectedKind === "campamento" && s.selectedNodePos) {
     return frameOn(view, s.selectedNodePos, ZOOM_NODE);
   }
@@ -96,7 +106,10 @@ export function cameraRect(view: ViewSize, s: CameraState): Rect {
     if (unidad) return frameOn(view, unidad, ZOOM_FOCUS);
     if (s.focusCenter) return frameOn(view, s.focusCenter, ZOOM_FOCUS);
   }
-  if (s.selectedNodePos) return frameOn(view, s.selectedNodePos, ZOOM_NODE);
+  // SEBIN no usa zoom de nodo — overview o coreSolo
+  if (s.selectedNodePos && s.selectedKind !== "sebin") {
+    return frameOn(view, s.selectedNodePos, ZOOM_NODE);
+  }
   return {
     x: round2(-view.w * ZOOM_OUT_PAD),
     y: round2(-view.h * ZOOM_OUT_PAD),
@@ -125,3 +138,5 @@ export const CAM_EASE = 0.055;
 export const CAM_EASE_HOME = 0.045;
 /** Entrada overview → unidad: un poco más lento. */
 export const CAM_EASE_ENTER_FOCUS = 0.018;
+/** Núcleo → red expandida: zoom-out cinematográfico. */
+export const CAM_EASE_EXPAND = 0.014;

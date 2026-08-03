@@ -21,6 +21,7 @@ import {
 import {
   CAM_EASE,
   CAM_EASE_ENTER_FOCUS,
+  CAM_EASE_EXPAND,
   CAM_EASE_HOME,
   cameraRect,
   lerpRect,
@@ -57,6 +58,15 @@ import { SebinNeuralCore } from "./SebinNeuralCore";
 
 const USER_ZOOM_MIN = 0.35;
 const USER_ZOOM_MAX = 3.2;
+/** Duración animación núcleo → red completa. */
+const EXPAND_MS = 1700;
+const CORE_R_SOLO = 78;
+const CORE_R_RED = 34;
+
+function easeOutCubic(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  return 1 - (1 - x) ** 3;
+}
 
 const VB_W = 1000;
 const VB_H = 720;
@@ -195,6 +205,11 @@ export function SebinBrainGraph({
   className?: string;
 }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
+  /** false = solo núcleo cerebro; true = red SEBIN→unidades→camps. */
+  const [redExpandida, setRedExpandida] = useState(false);
+  const prevRedExpandidaRef = useRef(false);
+  /** Inicio de la explosión radial (null = idle). */
+  const expandAnimRef = useRef<{ start: number } | null>(null);
   const setFocusUnidadId = (
     next: string | null | ((prev: string | null) => string | null),
   ) => {
@@ -245,7 +260,9 @@ export function SebinBrainGraph({
     focusedUnidad: false,
     selectedId: null as string | null,
     selectedKind: null as "campamento" | "unidad" | "sebin" | null,
+    coreSolo: true,
   });
+  const redExpandidaRef = useRef(false);
   const reducedRef = useRef(prefersReducedMotion());
   /** Zoom manual del usuario (1 = cámara cinematic pura). */
   const userZoomRef = useRef(1);
@@ -341,11 +358,71 @@ export function SebinBrainGraph({
   focusUnidadRef.current = focusUnidadId;
 
   const selectedMeta = selectedId ? byId.get(selectedId) : null;
+  redExpandidaRef.current = redExpandida;
   camStateRef.current = {
     focusedUnidad: !!focusUnidadId,
     selectedId,
     selectedKind: selectedMeta?.kind ?? null,
+    coreSolo: !redExpandida,
   };
+
+  // Lista/navegación externa → expandir red
+  useEffect(() => {
+    if (focusUnidadId) setRedExpandida(true);
+  }, [focusUnidadId]);
+  useEffect(() => {
+    if (selectedId?.startsWith("camp:")) setRedExpandida(true);
+  }, [selectedId]);
+
+  // Explosión radial al pasar de núcleo → red
+  useEffect(() => {
+    const was = prevRedExpandidaRef.current;
+    prevRedExpandidaRef.current = redExpandida;
+    if (!redExpandida) {
+      expandAnimRef.current = null;
+      return;
+    }
+    if (was) return; // ya estaba expandida
+
+    expandAnimRef.current = { start: performance.now() };
+    userZoomRef.current = 1;
+    userPanRef.current = { x: 0, y: 0 };
+    setUserZoomUi(1);
+
+    for (const d of nodesRef.current) {
+      if (d.kind === "sebin") continue;
+      const a = d.angle ?? 0;
+      const seed = 6 + (Math.abs(Math.sin(a * 12.9898)) * 14);
+      d.x = CX + Math.cos(a) * seed;
+      d.y = CY + Math.sin(a) * seed;
+      d.vx = Math.cos(a) * 3.2;
+      d.vy = Math.sin(a) * 3.2;
+      d.fx = null;
+      d.fy = null;
+    }
+    simRef.current?.alpha(1).alphaTarget(0.18).restart();
+    const cool = window.setTimeout(() => {
+      simRef.current?.alphaTarget(0);
+    }, 450);
+
+    const endAt = performance.now() + EXPAND_MS + 80;
+    let raf = 0;
+    const pump = () => {
+      setTick((x) => (x + 1) % 1_000_000);
+      if (performance.now() < endAt) {
+        raf = requestAnimationFrame(pump);
+      } else {
+        expandAnimRef.current = null;
+        setTick((x) => (x + 1) % 1_000_000);
+      }
+    };
+    raf = requestAnimationFrame(pump);
+
+    return () => {
+      window.clearTimeout(cool);
+      cancelAnimationFrame(raf);
+    };
+  }, [redExpandida]);
 
   // stage + teleporte al layout en CADA foco (denso necesita grilla ya clavada)
   useEffect(() => {
@@ -699,19 +776,27 @@ export function SebinBrainGraph({
           focusUnidadPos: focusUnidadLayoutPos ?? posOf(focusUnidadIdNow),
           focusCenter: focusCenterRef.current,
           focusBounds: focusBoundsRef.current,
+          coreSolo: c.coreSolo,
+          corePos: { x: CX, y: CY },
         },
       );
-      const goingHome = !c.focusedUnidad && !c.selectedId;
+      const goingHome =
+        !c.coreSolo && !c.focusedUnidad && !c.selectedId;
       const enteringFocus =
         c.focusedUnidad &&
         performance.now() < enterFocusSoftUntilRef.current;
+      const exploding =
+        expandAnimRef.current != null &&
+        performance.now() - expandAnimRef.current.start < EXPAND_MS;
       const ease = reduced
         ? 1
-        : goingHome
-          ? CAM_EASE_HOME
-          : enteringFocus
-            ? CAM_EASE_ENTER_FOCUS
-            : CAM_EASE;
+        : exploding
+          ? CAM_EASE_EXPAND
+          : c.coreSolo || goingHome
+            ? CAM_EASE_HOME
+            : enteringFocus
+              ? CAM_EASE_ENTER_FOCUS
+              : CAM_EASE;
       const next = lerpRect(cur, target, ease);
       cur = next;
       baseCamRef.current = cur;
@@ -780,19 +865,26 @@ export function SebinBrainGraph({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // Escape sale del foco
+  // Escape: foco unidad → overview; overview → núcleo solo
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (selectedId || focusUnidadId) {
-          setFocusUnidadId(null);
-          onSelect(null);
-        }
+      if (e.key !== "Escape") return;
+      if (focusUnidadId) {
+        setFocusUnidadId(null);
+        onSelect(null);
+        return;
+      }
+      if (redExpandidaRef.current) {
+        setRedExpandida(false);
+        onSelect(null);
+        userZoomRef.current = 1;
+        userPanRef.current = { x: 0, y: 0 };
+        setUserZoomUi(1);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, focusUnidadId, onSelect]);
+  }, [focusUnidadId, onSelect]);
 
   // ── drag / pan táctil ─────────────────────────────────────────────────
   const simNode = (id: string) => nodesRef.current.find((n) => n.id === id) ?? null;
@@ -1057,16 +1149,37 @@ export function SebinBrainGraph({
     endPanDrag(e);
   };
 
+  const colapsarANucleo = () => {
+    setFocusUnidadId(null);
+    setRedExpandida(false);
+    onSelect(null);
+    resetUserView();
+  };
+
   const onNodeClick = (n: SebinBrainNode) => {
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
     }
     if (n.kind === "sebin") {
-      setFocusUnidadId(null);
-      onSelect(n);
+      if (!redExpandida) {
+        // Vista cerebro → explosión radial (efecto en useEffect)
+        setFocusUnidadId(null);
+        onSelect(null);
+        setRedExpandida(true);
+        return;
+      }
+      if (focusUnidadId) {
+        // Sale del foco unidad; queda overview expandido
+        setFocusUnidadId(null);
+        onSelect(null);
+        return;
+      }
+      // Overview expandido → volver al cerebro solo
+      colapsarANucleo();
       return;
     }
+    if (!redExpandida) setRedExpandida(true);
     if (n.kind === "unidad") {
       setFocusUnidadId((f) => (f === n.id ? null : n.id));
       onSelect(n);
@@ -1118,17 +1231,33 @@ export function SebinBrainGraph({
   const focusId = hoverId ?? selectedId;
   const focusNode = focusId ? byId.get(focusId) : undefined;
 
+  /** 0→1 durante explosión; escalonado por anillo (unidades → camps). */
+  const expandReveal = (ring: number): number => {
+    const anim = expandAnimRef.current;
+    if (!anim) return 1;
+    if (reducedRef.current) return 1;
+    const elapsed = performance.now() - anim.start;
+    const delay = ring <= 0 ? 0 : ring === 1 ? 60 : 200;
+    const span = ring <= 1 ? 750 : 950;
+    return easeOutCubic((elapsed - delay) / span);
+  };
+
   /** Opacidad por rim: apex 1, flancos ~0.55, resto 0 (abanico navegable). */
   const nodeOpacity = (n: SebinBrainNode): number => {
+    const reveal = expandReveal(n.ring);
     if (!focusUnidadId) {
-      if (!focusNode || focusNode.kind === "sebin") return 1;
-      if (n.id === focusNode.id || n.kind === "sebin") return 1;
+      if (!focusNode || focusNode.kind === "sebin") return reveal;
+      if (n.id === focusNode.id || n.kind === "sebin") return reveal;
       if (focusNode.kind === "unidad") {
-        return n.unidadClave === focusNode.unidadClave || n.id === focusNode.id
-          ? 1
-          : 0.18;
+        return (
+          (n.unidadClave === focusNode.unidadClave || n.id === focusNode.id
+            ? 1
+            : 0.18) * reveal
+        );
       }
-      return n.id === `unidad:${focusNode.unidadClave}` ? 1 : 0.18;
+      return (
+        (n.id === `unidad:${focusNode.unidadClave}` ? 1 : 0.18) * reveal
+      );
     }
     if (n.kind === "sebin") return 1;
     const uid =
@@ -1471,13 +1600,21 @@ export function SebinBrainGraph({
         viewBox={`0 0 ${VB_W} ${VB_H}`}
         className="sebin-brain-graph relative z-[1] block h-full w-full cursor-grab select-none touch-none active:cursor-grabbing"
         role="img"
-        aria-label="Grafo operativo SEBIN. Arrastrar = pan, pellizcar = zoom."
+        aria-label={
+          redExpandida
+            ? "Grafo operativo SEBIN. Arrastrar = pan, pellizcar = zoom."
+            : "Núcleo SEBIN. Toca para expandir la red operativa."
+        }
         onClick={() => {
           if (suppressClickRef.current) {
             suppressClickRef.current = false;
             return;
           }
-          clearFocus();
+          if (focusUnidadId) {
+            clearFocus();
+            return;
+          }
+          if (redExpandida) colapsarANucleo();
         }}
         onPointerDown={onBgPointerDown}
         onPointerMove={onBgPointerMove}
@@ -1592,15 +1729,27 @@ export function SebinBrainGraph({
               "cx 900ms cubic-bezier(0.22,1,0.36,1), cy 900ms cubic-bezier(0.22,1,0.36,1), r 900ms cubic-bezier(0.22,1,0.36,1), opacity 500ms ease",
           } as const;
           const accent = focusNodeMeta?.color ?? "var(--primary)";
+          // Glow: compacto en núcleo; se abre con la explosión
+          const glowTarget =
+            (focusUnidadId ? ORBIT_R[3] : SCALE * 0.95) * gk;
+          const glowT = redExpandida ? expandReveal(1) : 0;
+          const glowR = !redExpandida
+            ? 120
+            : 120 + (glowTarget - 120) * glowT;
           return (
             <g aria-hidden>
               {/* glow central — home o aparato bajo en foco */}
               <circle
                 cx={gc.x}
                 cy={gc.y}
-                r={(focusUnidadId ? ORBIT_R[3] : SCALE * 0.95) * gk}
+                r={glowR}
                 fill="url(#sebinCoreGlow)"
-                opacity={focusUnidadId ? 0.35 : 0.55}
+                opacity={
+                  !redExpandida
+                    ? 0.7
+                    : (focusUnidadId ? 0.35 : 0.55) *
+                      (0.55 + 0.45 * glowT)
+                }
                 style={glide}
               />
               {/* halo tintado del color de unidad en foco */}
@@ -1616,60 +1765,74 @@ export function SebinBrainGraph({
                   style={glide}
                 />
               )}
-              {/* anillos sólidos suaves */}
-              <circle
-                cx={gc.x}
-                cy={gc.y}
-                r={((ORBIT_R[1] + ORBIT_R[2]) / 2) * gk}
-                fill="none"
-                stroke="var(--border)"
-                strokeWidth="1"
-                opacity={0.28}
-                style={glide}
-              />
-              <circle
-                cx={gc.x}
-                cy={gc.y}
-                r={((ORBIT_R[2] + ORBIT_R[3]) / 2) * gk}
-                fill="none"
-                stroke="var(--border)"
-                strokeWidth="1"
-                opacity={0.2}
-                style={glide}
-              />
-              {/* dashed que giran en home; en foco quedan fijos con el aparato */}
-              <g opacity={focusUnidadId ? 0.5 : 0.58}>
-                {!focusUnidadId && (
-                  <animateTransform
-                    attributeName="transform"
-                    attributeType="XML"
-                    type="rotate"
-                    from={`0 ${CX} ${CY}`}
-                    to={`360 ${CX} ${CY}`}
-                    dur="150s"
-                    repeatCount="indefinite"
-                  />
-                )}
-                {ORBIT_R.map((r) => (
+              {/* Anillos orbitales: aparecen con la explosión */}
+              {redExpandida && (
+                <g opacity={0.2 + 0.8 * expandReveal(1)} style={glide}>
                   <circle
-                    key={r}
                     cx={gc.x}
                     cy={gc.y}
-                    r={r * gk}
+                    r={((ORBIT_R[1] + ORBIT_R[2]) / 2) * gk}
                     fill="none"
                     stroke="var(--border)"
                     strokeWidth="1"
-                    strokeDasharray="2 6"
-                    style={glide}
+                    opacity={0.28}
                   />
-                ))}
-              </g>
+                  <circle
+                    cx={gc.x}
+                    cy={gc.y}
+                    r={((ORBIT_R[2] + ORBIT_R[3]) / 2) * gk}
+                    fill="none"
+                    stroke="var(--border)"
+                    strokeWidth="1"
+                    opacity={0.2}
+                  />
+                  <g opacity={focusUnidadId ? 0.5 : 0.58}>
+                    {!focusUnidadId && (
+                      <animateTransform
+                        attributeName="transform"
+                        attributeType="XML"
+                        type="rotate"
+                        from={`0 ${CX} ${CY}`}
+                        to={`360 ${CX} ${CY}`}
+                        dur="150s"
+                        repeatCount="indefinite"
+                      />
+                    )}
+                    {ORBIT_R.map((r) => (
+                      <circle
+                        key={r}
+                        cx={gc.x}
+                        cy={gc.y}
+                        r={r * gk}
+                        fill="none"
+                        stroke="var(--border)"
+                        strokeWidth="1"
+                        strokeDasharray="2 6"
+                      />
+                    ))}
+                  </g>
+                </g>
+              )}
+              {/* Cerebro solo: anillo suave respirando */}
+              {!redExpandida && (
+                <circle
+                  cx={CX}
+                  cy={CY}
+                  r={100}
+                  fill="none"
+                  stroke="var(--border)"
+                  strokeWidth={1.2}
+                  opacity={0.45}
+                  className="sebin-core-glow"
+                  style={{ ...glide, opacity: undefined }}
+                />
+              )}
             </g>
           );
         })()}
 
-        {/* red radial: oculta en foco — el árbol dibuja sus propias ramas */}
-        {!focusUnidadId && (
+        {/* red radial: oculta en núcleo-solo y en foco */}
+        {redExpandida && !focusUnidadId && (
           <g>
             {links.map((l, i) => {
               const ends = linkEnds(l);
@@ -1683,6 +1846,17 @@ export function SebinBrainGraph({
                 : l.kind === "supervisa"
                   ? "var(--foreground)"
                   : "var(--muted-foreground)";
+              const ring = target?.ring ?? (l.kind === "supervisa" ? 1 : 2);
+              const reveal = expandReveal(ring);
+              if (reveal < 0.02) return null;
+              const baseOp = active
+                ? critica
+                  ? 0.75
+                  : l.kind === "supervisa"
+                    ? 0.45
+                    : 0.32
+                : 0.04;
+              const growing = reveal < 0.98;
               return (
                 <path
                   key={`${sourceId}-${targetId}-${i}`}
@@ -1693,19 +1867,15 @@ export function SebinBrainGraph({
                     l.kind === "supervisa" ? 1.7 : critica ? 1.4 : 1
                   }
                   strokeLinecap="round"
-                  opacity={
-                    active
-                      ? critica
-                        ? 0.75
-                        : l.kind === "supervisa"
-                          ? 0.45
-                          : 0.32
-                      : 0.04
-                  }
+                  opacity={baseOp * reveal}
                   className={
-                    l.kind === "supervisa" && active ? "sebin-ray" : undefined
+                    growing
+                      ? "sebin-grow"
+                      : l.kind === "supervisa" && active
+                        ? "sebin-ray"
+                        : undefined
                   }
-                  style={{ transition: "opacity 0.35s ease" }}
+                  style={{ transition: growing ? undefined : "opacity 0.35s ease" }}
                 />
               );
             })}
@@ -1847,7 +2017,7 @@ export function SebinBrainGraph({
           </g>
         )}
 
-        {!focusUnidadId && (
+        {redExpandida && !focusUnidadId && (
           <g style={{ pointerEvents: "none" }}>
             {pulseKeys.map(({ key, critica }) => (
               <circle
@@ -1886,6 +2056,8 @@ export function SebinBrainGraph({
           {[...nodes]
             .sort((a, b) => a.ring - b.ring)
             .map((n) => {
+              // Vista inicial: solo el cerebro SEBIN
+              if (!redExpandida && n.kind !== "sebin") return null;
               const op = nodeOpacity(n);
               if (op <= 0.01) return null;
               const x = n.x ?? CX;
@@ -1899,14 +2071,25 @@ export function SebinBrainGraph({
                 !!focusUnidadId &&
                 n.kind === "campamento" &&
                 `unidad:${n.unidadClave}` === focusUnidadId;
+              const coreR = (() => {
+                if (!redExpandida) return CORE_R_SOLO;
+                const anim = expandAnimRef.current;
+                if (!anim || reducedRef.current) return CORE_R_RED;
+                const t = easeOutCubic(
+                  (performance.now() - anim.start) / 900,
+                );
+                return CORE_R_SOLO + (CORE_R_RED - CORE_R_SOLO) * t;
+              })();
               const r =
-                n.kind === "unidad" && isFocusHub
-                  ? R_NODE.unidad * 1.45
-                  : n.kind === "unidad" && isFlankHub
-                    ? R_NODE.unidad * 1.15
-                    : inApexCamp
-                      ? R_NODE.campamento * 1.45
-                      : R_NODE[n.kind];
+                n.kind === "sebin"
+                  ? coreR
+                  : n.kind === "unidad" && isFocusHub
+                    ? R_NODE.unidad * 1.45
+                    : n.kind === "unidad" && isFlankHub
+                      ? R_NODE.unidad * 1.15
+                      : inApexCamp
+                        ? R_NODE.campamento * 1.45
+                        : R_NODE[n.kind];
               const isSel = selectedId === n.id;
               const isHover = hoverId === n.id;
               const fade = dimmed(n);
@@ -1976,7 +2159,7 @@ export function SebinBrainGraph({
                   )}
                   {(isSel || isHover) && (
                     <circle
-                      r={(n.kind === "sebin" ? 42 : r) + 5}
+                      r={(n.kind === "sebin" ? r + 10 : r) + 5}
                       fill="none"
                       stroke={
                         isSel && focusUnidadId
@@ -1989,12 +2172,26 @@ export function SebinBrainGraph({
                   )}
                   {n.kind === "sebin" ? (
                     <>
-                      <circle r={44} fill="transparent" />
+                      <circle r={r + 14} fill="transparent" />
                       <SebinNeuralCore
-                        radius={34}
+                        radius={r}
                         color={sevColor}
                         label="SEBIN"
                       />
+                      {!redExpandida && (
+                        <text
+                          y={r + 36}
+                          textAnchor="middle"
+                          className="fill-muted-foreground"
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 500,
+                            pointerEvents: "none",
+                          }}
+                        >
+                          Toca para expandir
+                        </text>
+                      )}
                     </>
                   ) : (
                     <circle
