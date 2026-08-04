@@ -876,10 +876,11 @@ export function CensoNexusPanel({
         // no se fuerza el flujo de crear/reanudar vía damnificación.
         // Sin hogar activo: la persona buscada podría ser el jefe; sus
         // familiares sugeridos se conservan para marcarlos tras crear el hogar.
-        setFamSugeridos(p.familiares);
+        const familiares = p.familiares ?? [];
+        setFamSugeridos(familiares);
         const sel: Record<string, boolean> = {};
         const par: Record<string, string> = {};
-        for (const f of p.familiares) {
+        for (const f of familiares) {
           sel[f.cedula] = false;
           par[f.cedula] = f.parentesco || "Otro familiar";
         }
@@ -1318,7 +1319,10 @@ export function CensoNexusPanel({
   );
 
   const familiaresDisponibles = useMemo(
-    () => famSugeridos.filter((f) => !cedulasMiembros.has(soloDigitos(f.cedula))),
+    () =>
+      (famSugeridos ?? []).filter(
+        (f) => !cedulasMiembros.has(soloDigitos(f.cedula)),
+      ),
     [famSugeridos, cedulasMiembros],
   );
 
@@ -2561,7 +2565,7 @@ export function CensoNexusPanel({
                       {(persona.telefonos?.length ?? 0) + telsAgregados.length} tel.
                     </Badge>
                   ) : null}
-                  {persona.familiares.length > 0 ? (
+                  {(persona.familiares?.length ?? 0) > 0 ? (
                     <Badge variant="secondary" className="h-5 shrink-0 tabular-nums text-[10px]">
                       {persona.familiares.length} fam.
                     </Badge>
@@ -2666,14 +2670,14 @@ export function CensoNexusPanel({
               </div>
             </div>
 
-            {persona.familiares.length > 0 ? (
+            {(persona.familiares?.length ?? 0) > 0 ? (
               <div className="space-y-1.5">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                   <Users className="size-3.5" />
                   Familiares según el registro
                 </p>
                 <ul className="space-y-1">
-                  {persona.familiares.map((f) => {
+                  {(persona.familiares ?? []).map((f) => {
                     const edadFam = calcularEdad(f.fecha_nacimiento);
                     return (
                       <li

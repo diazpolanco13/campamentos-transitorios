@@ -6,7 +6,10 @@
 
 import { supabase } from "./supabaseClient";
 import { usuarioActual } from "./reposSupabase";
-import type { PersonaNexusCenso } from "@/domain/nexusPersona";
+import {
+  normalizarPersonaNexus,
+  type PersonaNexusCenso,
+} from "@/domain/nexusPersona";
 
 const GATEWAY_URL = (
   import.meta.env.VITE_NEXUS_GATEWAY_URL as string | undefined
@@ -250,7 +253,7 @@ export async function buscarPersonaNexus(
     throw new Error(msg);
   }
 
-  return json as PersonaNexusCenso;
+  return normalizarPersonaNexus(json as PersonaNexusCenso);
 }
 
 /** Ficha para el censo con procedencia: de la caché propia o del gateway. */
@@ -273,7 +276,7 @@ async function leerConsultaGuardada(
     .maybeSingle<{ data: unknown; actualizado_ts: number }>();
   if (error || !data) return null;
   return {
-    persona: data.data as PersonaNexusCenso,
+    persona: normalizarPersonaNexus(data.data as PersonaNexusCenso),
     ts: Number(data.actualizado_ts),
   };
 }

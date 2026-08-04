@@ -49,3 +49,15 @@ export function inicialesPersona(p: Pick<PersonaNexusCenso, "primer_nombre" | "p
   const b = (p.primer_apellido || "?").trim().charAt(0).toUpperCase();
   return `${a}${b}`;
 }
+
+/**
+ * Gateway/caché a veces omiten `familiares` o `telefonos`. Sin arrays, el
+ * panel de censo hace `.filter`/`.map` y la pantalla queda en negro.
+ */
+export function normalizarPersonaNexus(raw: PersonaNexusCenso): PersonaNexusCenso {
+  return {
+    ...raw,
+    telefonos: Array.isArray(raw.telefonos) ? raw.telefonos : [],
+    familiares: Array.isArray(raw.familiares) ? raw.familiares : [],
+  };
+}
