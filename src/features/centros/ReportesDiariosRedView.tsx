@@ -352,7 +352,7 @@ function TarjetaTotalIndicadorReporte({
   );
 }
 
-function TarjetaTotalRefugios({
+function TarjetaTotalCampamentos({
   total,
   activo,
   onClick,
@@ -379,7 +379,7 @@ function TarjetaTotalRefugios({
       <div className="flex items-center justify-between gap-1 sm:gap-2">
         <span className="inline-flex min-w-0 items-center gap-1 text-[10px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
           <Building2 className="size-3 shrink-0" style={{ color }} />
-          <span className="truncate leading-tight">Total de refugios</span>
+          <span className="truncate leading-tight">Total de campamentos</span>
         </span>
         <span className="shrink-0 rounded-full bg-muted/60 px-1 py-0.5 text-[9px] font-medium tabular-nums text-muted-foreground sm:px-1.5 sm:text-[10px]">
           100%
@@ -1523,7 +1523,7 @@ export function ReportesDiariosRedView() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-                  <TarjetaTotalRefugios
+                  <TarjetaTotalCampamentos
                     total={totalCampamentos}
                     activo={ocupacionFiltro === "todos"}
                     onClick={() => setOcupacionFiltro("todos")}

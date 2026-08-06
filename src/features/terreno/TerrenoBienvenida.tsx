@@ -35,7 +35,7 @@ export function TerrenoBienvenida({ nombreCentro, onContinuar }: Props) {
             <MapPin className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
             <div className="min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Campamento / refugio
+                Campamento
               </p>
               <p className="truncate text-sm font-semibold text-foreground">
                 {nombreCentro}

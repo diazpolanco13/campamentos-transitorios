@@ -66,7 +66,7 @@ export function KpisPorZonaSala({ zona, kpis, activo, onSeleccionar }: Props) {
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <MiniStat
-          label="Refugios"
+          label="Campamentos"
           valor={kpis.refugiosTotal}
           icono={<Building2 className="size-3" />}
         />

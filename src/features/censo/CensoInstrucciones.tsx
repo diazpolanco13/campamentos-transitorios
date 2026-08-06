@@ -68,7 +68,7 @@ export function CensoInstrucciones({ onContinuar }: Props) {
 
       <CardContent className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-2">
         <Consejo icono={Home} titulo="Ubique al jefe o líder de una familia y empiece por él o ella">
-          Esa persona conoce quiénes de su hogar están en el refugio, puede señalarlos y
+          Esa persona conoce quiénes de su hogar están en el campamento, puede señalarlos y
           confirmar identidades. También ayuda a registrar a los menores y a dar su
           información (nombres, edades, parentesco) cuando no tienen cédula a la mano.
         </Consejo>

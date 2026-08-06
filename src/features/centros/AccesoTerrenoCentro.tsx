@@ -1,5 +1,5 @@
 // Acceso de terreno del campamento: enlace con token secreto + QR para el
-// personal que trabaja dentro del refugio (abre /terreno ya autorizado para
+// personal que trabaja dentro del campamento (abre /terreno ya autorizado para
 // ESTE campamento, sin usuario). Solo la ven admin/analista_sae: la RLS de
 // `tokens_centros` oculta el token al resto de roles y la sección no se pinta.
 // El QR se genera en el navegador (lib `qrcode`), sin servicios externos.
@@ -37,7 +37,7 @@ function telegramParaPortapapeles(raw: string | null | undefined): string | null
 
 /**
  * Texto listo para pegar en Telegram (negritas con **etiqueta**):
- * REFUGIO, UBICACIÓN, GPS, RESPONSABLES y enlace de la plataforma.
+ * CAMPAMENTO, UBICACIÓN, GPS, RESPONSABLES y enlace de la plataforma.
  */
 function textoPortapapelesTerreno(
   centro: CentroTransitorio,
@@ -52,7 +52,7 @@ function textoPortapapelesTerreno(
   const cuerpo = metaCuerpoDe(centro.cuerpo);
   const unidad = metaUnidadSebinCentro(centro);
 
-  const lineas: string[] = [`**REFUGIO:** ${nombre}`];
+  const lineas: string[] = [`**CAMPAMENTO:** ${nombre}`];
   if (ubicacion) lineas.push(`**UBICACIÓN:** ${ubicacion}`);
   if (gps) lineas.push(`**GPS:** ${gps}`);
 
@@ -80,7 +80,7 @@ function textoPortapapelesTerreno(
     }
   }
 
-  lineas.push("**PLATAFORMA DE GESTIÓN DE REFUGIOS DE LA SAE:**");
+  lineas.push("**PLATAFORMA DE GESTIÓN DE CAMPAMENTOS DE LA SAE:**");
   lineas.push(enlace);
   return lineas.join("\n");
 }

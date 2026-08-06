@@ -354,7 +354,7 @@ export function DashboardView({ sesion }: { sesion: Sesion }) {
             {/* L1: Globales */}
             <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-4">
               <KpiSala
-                label="Total refugios"
+                label="Total campamentos"
                 valor={kpis.centrosTotal}
                 icono={<Building2 className="size-4" />}
                 grande
