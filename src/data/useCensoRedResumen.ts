@@ -3,8 +3,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  kpisImportacionesVacios,
+  obtenerKpisImportacionesExcel,
   obtenerResumenCensoRed,
   obtenerResumenSiipol,
+  type KpisImportacionesExcel,
   type ResumenSiipol,
 } from "./reposCenso";
 import type { ResumenCensoCentro } from "@/domain/censoResumen";
@@ -16,6 +19,8 @@ export function useCensoRedResumen() {
     verificados: 0,
     pendientes: 0,
   });
+  const [kpisImportaciones, setKpisImportaciones] =
+    useState<KpisImportacionesExcel>(() => kpisImportacionesVacios());
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,16 +28,19 @@ export function useCensoRedResumen() {
     setCargando(true);
     setError(null);
     try {
-      const [data, resumenSiipol] = await Promise.all([
+      const [data, resumenSiipol, kpis] = await Promise.all([
         obtenerResumenCensoRed(),
         obtenerResumenSiipol(),
+        obtenerKpisImportacionesExcel(),
       ]);
       setResumenes(data);
       setSiipol(resumenSiipol);
+      setKpisImportaciones(kpis);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo cargar el registro");
       setResumenes([]);
       setSiipol({ totalImportados: 0, verificados: 0, pendientes: 0 });
+      setKpisImportaciones(kpisImportacionesVacios());
     } finally {
       setCargando(false);
     }
@@ -42,5 +50,5 @@ export function useCensoRedResumen() {
     void refrescar();
   }, [refrescar]);
 
-  return { resumenes, siipol, cargando, error, refrescar };
+  return { resumenes, siipol, kpisImportaciones, cargando, error, refrescar };
 }

@@ -605,6 +605,96 @@ export async function obtenerResumenSiipol(): Promise<ResumenSiipol> {
   };
 }
 
+/** KPIs de cabecera para Importaciones Excel (parte + identidad + verificación).
+ *  Identidad es partición de `importadosExcel` (las 5 suman ese total).
+ *  `personasVerificables` = adultos cedulados + menores con cédula. */
+export interface KpisImportacionesExcel {
+  parteUltimo: number;
+  importadosExcel: number;
+  totalRegistros: number;
+  campamentosConImport: number;
+  /** Adultos / sin edad, con cédula válida. */
+  ceduladasVerificables: number;
+  menoresNoCedulados: number;
+  menoresConCedula: number;
+  /** Adultos o sin edad, sin documento. */
+  adultosSinCedula: number;
+  cedulasInvalidas: number;
+  /** Universo SIIPOL/SAIME: cédula válida (adultos + menores). */
+  personasVerificables: number;
+  siipolVerificados: number;
+  siipolPendientes: number;
+  saimeVerificados: number;
+  saimePendientes: number;
+  solicitados: number;
+  conRegistroPolicial: number;
+}
+
+const KPIS_IMPORTACIONES_VACIO: KpisImportacionesExcel = {
+  parteUltimo: 0,
+  importadosExcel: 0,
+  totalRegistros: 0,
+  campamentosConImport: 0,
+  ceduladasVerificables: 0,
+  menoresNoCedulados: 0,
+  menoresConCedula: 0,
+  adultosSinCedula: 0,
+  cedulasInvalidas: 0,
+  personasVerificables: 0,
+  siipolVerificados: 0,
+  siipolPendientes: 0,
+  saimeVerificados: 0,
+  saimePendientes: 0,
+  solicitados: 0,
+  conRegistroPolicial: 0,
+};
+
+export function kpisImportacionesVacios(): KpisImportacionesExcel {
+  return { ...KPIS_IMPORTACIONES_VACIO };
+}
+
+/** Agregados de Importaciones Excel + último parte (misma regla que Campamentos). */
+export async function obtenerKpisImportacionesExcel(): Promise<KpisImportacionesExcel> {
+  const { data, error } = await supabase.rpc("censo_importaciones_kpis");
+  if (error) throw new Error(error.message);
+  const fila = (data?.[0] ?? {}) as {
+    parte_ultimo?: number;
+    importados_excel?: number;
+    total_registros?: number;
+    campamentos_con_import?: number;
+    ceduladas_verificables?: number;
+    menores_no_cedulados?: number;
+    menores_con_cedula?: number;
+    adultos_sin_cedula?: number;
+    cedulas_invalidas?: number;
+    personas_verificables?: number;
+    siipol_verificados?: number;
+    siipol_pendientes?: number;
+    saime_verificados?: number;
+    saime_pendientes?: number;
+    solicitados?: number;
+    con_registro_policial?: number;
+  };
+  return {
+    parteUltimo: Number(fila.parte_ultimo ?? 0),
+    importadosExcel: Number(fila.importados_excel ?? 0),
+    totalRegistros: Number(fila.total_registros ?? 0),
+    campamentosConImport: Number(fila.campamentos_con_import ?? 0),
+    ceduladasVerificables: Number(fila.ceduladas_verificables ?? 0),
+    menoresNoCedulados: Number(fila.menores_no_cedulados ?? 0),
+    menoresConCedula: Number(fila.menores_con_cedula ?? 0),
+    adultosSinCedula: Number(fila.adultos_sin_cedula ?? 0),
+    cedulasInvalidas: Number(fila.cedulas_invalidas ?? 0),
+    personasVerificables: Number(fila.personas_verificables ?? 0),
+    siipolVerificados: Number(fila.siipol_verificados ?? 0),
+    siipolPendientes: Number(fila.siipol_pendientes ?? 0),
+    saimeVerificados: Number(fila.saime_verificados ?? 0),
+    saimePendientes: Number(fila.saime_pendientes ?? 0),
+    solicitados: Number(fila.solicitados ?? 0),
+    conRegistroPolicial: Number(fila.con_registro_policial ?? 0),
+  };
+}
+
 /** Fila agregada de verificación Nexus/SIIPOL por campamento (import_excel). */
 export interface VerificacionCensoCentro {
   centroId: string;

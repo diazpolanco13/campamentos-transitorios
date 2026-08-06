@@ -6,6 +6,9 @@ import {
   BadgeCheck,
   Check,
   ChevronsUpDown,
+  ClipboardList,
+  FileSpreadsheet,
+  IdCard,
   Loader2,
   RefreshCw,
   Search,
@@ -13,6 +16,7 @@ import {
   ShieldCheck,
   Users,
   FilterX,
+  CircleAlert,
   ScanSearch,
 } from "lucide-react";
 import type { Sesion } from "@/data/authSupabase";
@@ -65,6 +69,7 @@ type FiltroBinario = "todos" | "si" | "no";
 function KpiPersona({
   valor,
   etiqueta,
+  detalle,
   icono: Icono,
   clase,
   onClick,
@@ -72,6 +77,7 @@ function KpiPersona({
 }: {
   valor: number;
   etiqueta: string;
+  detalle?: string;
   icono: typeof Users;
   clase?: string;
   onClick?: () => void;
@@ -92,6 +98,9 @@ function KpiPersona({
           {valor.toLocaleString("es")}
         </p>
         <p className="mt-0.5 text-[11px] text-muted-foreground">{etiqueta}</p>
+        {detalle ? (
+          <p className="text-[10px] text-muted-foreground/80">{detalle}</p>
+        ) : null}
       </div>
     </CardContent>
   );
@@ -132,7 +141,7 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
 
   const {
     resumenes,
-    siipol,
+    kpisImportaciones,
     cargando: cargandoResumen,
     refrescar: refrescarResumen,
   } = useCensoRedResumen();
@@ -179,18 +188,12 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
     [resumenes],
   );
 
-  const kpis = useMemo(() => {
-    let totalPersonas = 0;
+  const kpisDemo = useMemo(() => {
     let hombres = 0;
     let mujeres = 0;
     let menores = 0;
-    let solicitados = 0;
-    let conRegistroPolicial = 0;
-    let campamentosConDatos = 0;
     for (const r of resumenes) {
       if (r.totalRegistrados <= 0) continue;
-      campamentosConDatos += 1;
-      totalPersonas += r.totalRegistrados;
       hombres += r.hombres;
       mujeres += r.mujeres;
       menores +=
@@ -200,19 +203,15 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
         r.ninas +
         r.adolescentesH +
         r.adolescentesM;
-      solicitados += r.solicitados;
-      conRegistroPolicial += r.conRegistroPolicial;
     }
-    return {
-      total: totalPersonas,
-      campamentos: campamentosConDatos,
-      hombres,
-      mujeres,
-      menores,
-      solicitados,
-      conRegistroPolicial,
-    };
+    return { hombres, mujeres, menores };
   }, [resumenes]);
+
+  const pctVerif = (parte: number) => {
+    const base = kpisImportaciones.personasVerificables;
+    if (base <= 0) return "0% de verificables";
+    return `${Math.round((parte / base) * 100)}% de ${base.toLocaleString("es")}`;
+  };
 
   const hayFiltros =
     busqueda.trim() !== "" ||
@@ -238,7 +237,7 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
       icono={Users}
       acento="teal"
       titulo="Importaciones Excel"
-      descripcion="Personas de planillas externas; identidad nominal y verificación SIIPOL se controlan por separado."
+      descripcion="Planillas externas contrastadas con el último parte de campamentos; SIIPOL y SAIME sobre cédulas verificables."
       cuerpoClassName="p-4 lg:p-6"
       acciones={
         tieneAcceso ? (
@@ -291,44 +290,151 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
           <div className="space-y-2">
             <div>
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Demografía
+                Meta operativa
               </p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-                <KpiPersona valor={kpis.total} etiqueta="Total registrados" icono={Users} />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <KpiPersona
-                  valor={kpis.campamentos}
-                  etiqueta="Campamentos"
-                  icono={Users}
+                  valor={kpisImportaciones.parteUltimo}
+                  etiqueta="Último parte totalizado"
+                  detalle="Misma cifra que Campamentos"
+                  icono={ClipboardList}
+                  clase="bg-sky-500/10 text-sky-600 dark:text-sky-300"
                 />
                 <KpiPersona
-                  valor={kpis.hombres}
-                  etiqueta="Hombres"
-                  icono={Users}
-                  activo={sexo === "M"}
-                  onClick={() => setSexo((v) => (v === "M" ? "todos" : "M"))}
+                  valor={kpisImportaciones.importadosExcel}
+                  etiqueta="Cargadas por Excel"
+                  detalle={`${kpisImportaciones.campamentosConImport.toLocaleString("es")} campamentos`}
+                  icono={FileSpreadsheet}
                 />
                 <KpiPersona
-                  valor={kpis.mujeres}
-                  etiqueta="Mujeres"
+                  valor={kpisImportaciones.campamentosConImport}
+                  etiqueta="Campamentos con planilla"
+                  detalle={
+                    kpisImportaciones.totalRegistros > kpisImportaciones.importadosExcel
+                      ? `+${(kpisImportaciones.totalRegistros - kpisImportaciones.importadosExcel).toLocaleString("es")} fuera de Excel en listado`
+                      : "Con al menos un import Excel"
+                  }
                   icono={Users}
-                  activo={sexo === "F"}
-                  onClick={() => setSexo((v) => (v === "F" ? "todos" : "F"))}
-                />
-                <KpiPersona
-                  valor={kpis.menores}
-                  etiqueta="Menores de 18"
-                  icono={Baby}
                 />
               </div>
             </div>
 
             <div>
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Registros de interés · clic para filtrar
+                Identidad · partición de las{" "}
+                {kpisImportaciones.importadosExcel.toLocaleString("es")} Excel
               </p>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
                 <KpiPersona
-                  valor={kpis.solicitados}
+                  valor={kpisImportaciones.ceduladasVerificables}
+                  etiqueta="Ceduladas verificables"
+                  detalle="Adultos/sin edad · cédula OK"
+                  icono={IdCard}
+                  clase="bg-sky-500/10 text-sky-600 dark:text-sky-300"
+                  activo={orden === "con_cedula"}
+                  onClick={() =>
+                    setOrden((v) => (v === "con_cedula" ? "reciente" : "con_cedula"))
+                  }
+                />
+                <KpiPersona
+                  valor={kpisImportaciones.menoresNoCedulados}
+                  etiqueta="Menores no cedulados"
+                  detalle="Menores de 18 sin documento"
+                  icono={Baby}
+                  clase="bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                  activo={orden === "sin_cedula"}
+                  onClick={() =>
+                    setOrden((v) => (v === "sin_cedula" ? "reciente" : "sin_cedula"))
+                  }
+                />
+                <KpiPersona
+                  valor={kpisImportaciones.menoresConCedula}
+                  etiqueta="Menores con cédula"
+                  detalle="Menores de 18 con documento OK"
+                  icono={Baby}
+                  clase="bg-indigo-500/10 text-indigo-600 dark:text-indigo-300"
+                />
+                <KpiPersona
+                  valor={kpisImportaciones.adultosSinCedula}
+                  etiqueta="Adultos sin cédula"
+                  detalle="≥18 o sin edad · sin doc"
+                  icono={Users}
+                  clase="bg-slate-500/10 text-slate-600 dark:text-slate-300"
+                />
+                <KpiPersona
+                  valor={kpisImportaciones.cedulasInvalidas}
+                  etiqueta="Cédulas con error"
+                  detalle="Formato no consultable"
+                  icono={CircleAlert}
+                  clase="bg-rose-500/10 text-rose-600 dark:text-rose-300"
+                />
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Verificación ·{" "}
+                {kpisImportaciones.personasVerificables.toLocaleString("es")}{" "}
+                personas con cédula (adultos + menores)
+              </p>
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-5">
+                <KpiPersona
+                  valor={kpisImportaciones.personasVerificables}
+                  etiqueta="Personas verificables"
+                  detalle={`${kpisImportaciones.ceduladasVerificables.toLocaleString("es")} adultos + ${kpisImportaciones.menoresConCedula.toLocaleString("es")} menores`}
+                  icono={IdCard}
+                  clase="bg-sky-500/10 text-sky-600 dark:text-sky-300"
+                />
+                <KpiPersona
+                  valor={kpisImportaciones.siipolVerificados}
+                  etiqueta="SIIPOL verificados"
+                  detalle={pctVerif(kpisImportaciones.siipolVerificados)}
+                  icono={BadgeCheck}
+                  clase="bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                  activo={verificadoSiipol === "si"}
+                  onClick={() =>
+                    setVerificadoSiipol((v) => (v === "si" ? "todos" : "si"))
+                  }
+                />
+                <KpiPersona
+                  valor={kpisImportaciones.siipolPendientes}
+                  etiqueta="SIIPOL pendientes"
+                  detalle={pctVerif(kpisImportaciones.siipolPendientes)}
+                  icono={ScanSearch}
+                  clase="bg-slate-500/10 text-slate-600 dark:text-slate-300"
+                  activo={verificadoSiipol === "no"}
+                  onClick={() =>
+                    setVerificadoSiipol((v) => (v === "no" ? "todos" : "no"))
+                  }
+                />
+                <KpiPersona
+                  valor={kpisImportaciones.saimeVerificados}
+                  etiqueta="SAIME verificados"
+                  detalle={pctVerif(kpisImportaciones.saimeVerificados)}
+                  icono={BadgeCheck}
+                  clase="bg-blue-500/10 text-blue-600 dark:text-blue-300"
+                  activo={orden === "nexus"}
+                  onClick={() =>
+                    setOrden((v) => (v === "nexus" ? "reciente" : "nexus"))
+                  }
+                />
+                <KpiPersona
+                  valor={kpisImportaciones.saimePendientes}
+                  etiqueta="SAIME pendientes"
+                  detalle={pctVerif(kpisImportaciones.saimePendientes)}
+                  icono={ScanSearch}
+                  clase="bg-orange-500/10 text-orange-600 dark:text-orange-300"
+                />
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Alertas de seguridad · clic para filtrar
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <KpiPersona
+                  valor={kpisImportaciones.solicitados}
                   etiqueta="Solicitados"
                   icono={ShieldAlert}
                   clase="bg-red-500/10 text-red-600 dark:text-red-300"
@@ -338,7 +444,7 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
                   }
                 />
                 <KpiPersona
-                  valor={kpis.conRegistroPolicial}
+                  valor={kpisImportaciones.conRegistroPolicial}
                   etiqueta="Reg. policial"
                   icono={ShieldCheck}
                   clase="bg-amber-500/10 text-amber-600 dark:text-amber-300"
@@ -347,25 +453,33 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
                     setRegistroPolicial((v) => (v === "si" ? "todos" : "si"))
                   }
                 />
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Demografía · clic para filtrar
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <KpiPersona
-                  valor={siipol.verificados}
-                  etiqueta="SIIPOL verificados"
-                  icono={BadgeCheck}
-                  clase="bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
-                  activo={verificadoSiipol === "si"}
-                  onClick={() =>
-                    setVerificadoSiipol((v) => (v === "si" ? "todos" : "si"))
-                  }
+                  valor={kpisDemo.hombres}
+                  etiqueta="Hombres"
+                  icono={Users}
+                  activo={sexo === "M"}
+                  onClick={() => setSexo((v) => (v === "M" ? "todos" : "M"))}
                 />
                 <KpiPersona
-                  valor={siipol.pendientes}
-                  etiqueta="SIIPOL pendientes"
-                  icono={ScanSearch}
-                  clase="bg-slate-500/10 text-slate-600 dark:text-slate-300"
-                  activo={verificadoSiipol === "no"}
-                  onClick={() =>
-                    setVerificadoSiipol((v) => (v === "no" ? "todos" : "no"))
-                  }
+                  valor={kpisDemo.mujeres}
+                  etiqueta="Mujeres"
+                  icono={Users}
+                  activo={sexo === "F"}
+                  onClick={() => setSexo((v) => (v === "F" ? "todos" : "F"))}
+                />
+                <KpiPersona
+                  valor={kpisDemo.menores}
+                  etiqueta="Menores de 18"
+                  detalle="Con edad consignada"
+                  icono={Baby}
                 />
               </div>
             </div>
