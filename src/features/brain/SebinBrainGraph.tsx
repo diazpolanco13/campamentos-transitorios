@@ -59,14 +59,25 @@ import { SebinNeuralCore } from "./SebinNeuralCore";
 
 const USER_ZOOM_MIN = 0.35;
 const USER_ZOOM_MAX = 3.2;
-/** Duración animación núcleo → red completa. */
-const EXPAND_MS = 1700;
+/** Duración animación núcleo → red completa (reveal + asentamiento). */
+const EXPAND_MS = 3200;
+/** Impulso radial suave al expandir (antes 3.2 = demasiado violento). */
+const EXPAND_BURST_V = 0.95;
+const EXPAND_ALPHA = 0.48;
+const EXPAND_ALPHA_TARGET = 0.05;
+const EXPAND_COOL_MS = 1400;
 const CORE_R_SOLO = 78;
 const CORE_R_RED = 34;
 
 function easeOutCubic(t: number): number {
   const x = Math.min(1, Math.max(0, t));
   return 1 - (1 - x) ** 3;
+}
+
+/** Reveal progresivo: arranca suave, florece, aterriza. */
+function easeInOutCubic(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  return x < 0.5 ? 4 * x ** 3 : 1 - ((-2 * x + 2) ** 3) / 2;
 }
 
 const VB_W = 1000;
@@ -113,6 +124,25 @@ type SimLink = {
   target: string | SimNode;
   kind: SebinBrainEdge["kind"];
 };
+
+/** Nube suave + impulso leve hacia el anillo (no explosión desde el centro). */
+function seedExpandBurst(
+  nodes: SimNode[],
+  sim: Simulation<SimNode, SimLink> | null,
+) {
+  for (const d of nodes) {
+    if (d.kind === "sebin") continue;
+    const a = d.angle ?? 0;
+    const seed = 16 + Math.abs(Math.sin(a * 12.9898)) * 28;
+    d.x = CX + Math.cos(a) * seed;
+    d.y = CY + Math.sin(a) * seed;
+    d.vx = Math.cos(a) * EXPAND_BURST_V;
+    d.vy = Math.sin(a) * EXPAND_BURST_V;
+    d.fx = null;
+    d.fy = null;
+  }
+  sim?.alpha(EXPAND_ALPHA).alphaTarget(EXPAND_ALPHA_TARGET).restart();
+}
 
 function shortLabel(n: SebinBrainNode): string {
   if (n.kind === "campamento" && n.label.length > 18) {
@@ -394,21 +424,10 @@ export function SebinBrainGraph({
     userPanRef.current = { x: 0, y: 0 };
     setUserZoomUi(1);
 
-    for (const d of nodesRef.current) {
-      if (d.kind === "sebin") continue;
-      const a = d.angle ?? 0;
-      const seed = 6 + (Math.abs(Math.sin(a * 12.9898)) * 14);
-      d.x = CX + Math.cos(a) * seed;
-      d.y = CY + Math.sin(a) * seed;
-      d.vx = Math.cos(a) * 3.2;
-      d.vy = Math.sin(a) * 3.2;
-      d.fx = null;
-      d.fy = null;
-    }
-    simRef.current?.alpha(1).alphaTarget(0.18).restart();
+    seedExpandBurst(nodesRef.current, simRef.current);
     const cool = window.setTimeout(() => {
       simRef.current?.alphaTarget(0);
-    }, 450);
+    }, EXPAND_COOL_MS);
 
     const endAt = performance.now() + EXPAND_MS + 80;
     let raf = 0;
@@ -681,26 +700,16 @@ export function SebinBrainGraph({
     sim.force("stage", stageForce);
 
     simRef.current = sim;
-    sim.alpha(0.75).restart();
 
-    // Montaje: expand effect corre antes que este; si ya hay explosión, sembrar burst ahora
+    // Montaje con expand: burst suave (sin alpha 0.75 previo = doble patada)
     let burstCool: number | undefined;
     if (expandAnimRef.current) {
-      for (const d of nodes) {
-        if (d.kind === "sebin") continue;
-        const a = d.angle ?? 0;
-        const seed = 6 + Math.abs(Math.sin(a * 12.9898)) * 14;
-        d.x = CX + Math.cos(a) * seed;
-        d.y = CY + Math.sin(a) * seed;
-        d.vx = Math.cos(a) * 3.2;
-        d.vy = Math.sin(a) * 3.2;
-        d.fx = null;
-        d.fy = null;
-      }
-      sim.alpha(1).alphaTarget(0.18).restart();
+      seedExpandBurst(nodes, sim);
       burstCool = window.setTimeout(() => {
         simRef.current?.alphaTarget(0);
-      }, 450);
+      }, EXPAND_COOL_MS);
+    } else {
+      sim.alpha(0.75).restart();
     }
 
     return () => {
@@ -1243,15 +1252,15 @@ export function SebinBrainGraph({
   const focusId = hoverId ?? selectedId;
   const focusNode = focusId ? byId.get(focusId) : undefined;
 
-  /** 0→1 durante explosión; escalonado por anillo (unidades → camps). */
+  /** 0→1 durante explosión; escalonado lento por anillo (unidades → camps). */
   const expandReveal = (ring: number): number => {
     const anim = expandAnimRef.current;
     if (!anim) return 1;
     if (reducedRef.current) return 1;
     const elapsed = performance.now() - anim.start;
-    const delay = ring <= 0 ? 0 : ring === 1 ? 60 : 200;
-    const span = ring <= 1 ? 750 : 950;
-    return easeOutCubic((elapsed - delay) / span);
+    const delay = ring <= 0 ? 0 : ring === 1 ? 220 : 720;
+    const span = ring <= 1 ? 1600 : 2200;
+    return easeInOutCubic((elapsed - delay) / span);
   };
 
   /** Opacidad por rim: apex 1, flancos ~0.55, resto 0 (abanico navegable). */
