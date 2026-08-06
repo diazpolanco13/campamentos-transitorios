@@ -209,8 +209,9 @@ export function SebinBrainGraph({
   className?: string;
 }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
-  /** false = solo núcleo cerebro; true = red SEBIN→unidades→camps. */
-  const [redExpandida, setRedExpandida] = useState(false);
+  /** Siempre expandida al cargar; false solo si algún path legacy colapsa. */
+  const [redExpandida, setRedExpandida] = useState(true);
+  /** false inicial → el effect dispara explosión radial al montar. */
   const prevRedExpandidaRef = useRef(false);
   /** Inicio de la explosión radial (null = idle). */
   const expandAnimRef = useRef<{ start: number } | null>(null);
@@ -264,9 +265,9 @@ export function SebinBrainGraph({
     focusedUnidad: false,
     selectedId: null as string | null,
     selectedKind: null as "campamento" | "unidad" | "sebin" | null,
-    coreSolo: true,
+    coreSolo: false,
   });
-  const redExpandidaRef = useRef(false);
+  const redExpandidaRef = useRef(true);
   const reducedRef = useRef(prefersReducedMotion());
   /** Zoom manual del usuario (1 = cámara cinematic pura). */
   const userZoomRef = useRef(1);
@@ -425,6 +426,11 @@ export function SebinBrainGraph({
     return () => {
       window.clearTimeout(cool);
       cancelAnimationFrame(raf);
+      // Strict Mode remount: re-disparar explosión si cleanup corta anim a medias
+      if (expandAnimRef.current) {
+        prevRedExpandidaRef.current = false;
+        expandAnimRef.current = null;
+      }
     };
   }, [redExpandida]);
 
@@ -677,7 +683,28 @@ export function SebinBrainGraph({
     simRef.current = sim;
     sim.alpha(0.75).restart();
 
+    // Montaje: expand effect corre antes que este; si ya hay explosión, sembrar burst ahora
+    let burstCool: number | undefined;
+    if (expandAnimRef.current) {
+      for (const d of nodes) {
+        if (d.kind === "sebin") continue;
+        const a = d.angle ?? 0;
+        const seed = 6 + Math.abs(Math.sin(a * 12.9898)) * 14;
+        d.x = CX + Math.cos(a) * seed;
+        d.y = CY + Math.sin(a) * seed;
+        d.vx = Math.cos(a) * 3.2;
+        d.vy = Math.sin(a) * 3.2;
+        d.fx = null;
+        d.fy = null;
+      }
+      sim.alpha(1).alphaTarget(0.18).restart();
+      burstCool = window.setTimeout(() => {
+        simRef.current?.alphaTarget(0);
+      }, 450);
+    }
+
     return () => {
+      if (burstCool != null) window.clearTimeout(burstCool);
       sim.stop();
       simRef.current = null;
     };
@@ -869,21 +896,13 @@ export function SebinBrainGraph({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // Escape: foco unidad → overview; overview → núcleo solo
+  // Escape: foco unidad → overview (ya no colapsa al núcleo)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (focusUnidadId) {
         setFocusUnidadId(null);
         onSelect(null);
-        return;
-      }
-      if (redExpandidaRef.current) {
-        setRedExpandida(false);
-        onSelect(null);
-        userZoomRef.current = 1;
-        userPanRef.current = { x: 0, y: 0 };
-        setUserZoomUi(1);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1160,37 +1179,19 @@ export function SebinBrainGraph({
     endPanDrag(e);
   };
 
-  const colapsarANucleo = () => {
-    setFocusUnidadId(null);
-    setRedExpandida(false);
-    onSelect(null);
-    resetUserView();
-  };
-
   const onNodeClick = (n: SebinBrainNode) => {
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
     }
     if (n.kind === "sebin") {
-      if (!redExpandida) {
-        // Vista cerebro → explosión radial (efecto en useEffect)
-        setFocusUnidadId(null);
-        onSelect(null);
-        setRedExpandida(true);
-        return;
-      }
       if (focusUnidadId) {
         // Sale del foco unidad; queda overview expandido
         setFocusUnidadId(null);
         onSelect(null);
-        return;
       }
-      // Overview expandido → volver al cerebro solo
-      colapsarANucleo();
       return;
     }
-    if (!redExpandida) setRedExpandida(true);
     if (n.kind === "unidad") {
       setFocusUnidadId((f) => (f === n.id ? null : n.id));
       onSelect(n);
@@ -1611,11 +1612,7 @@ export function SebinBrainGraph({
         viewBox={`0 0 ${VB_W} ${VB_H}`}
         className="sebin-brain-graph relative z-[1] block h-full w-full cursor-grab select-none touch-none active:cursor-grabbing"
         role="img"
-        aria-label={
-          redExpandida
-            ? "Grafo operativo SEBIN. Arrastrar = pan, pellizcar = zoom."
-            : "Núcleo SEBIN. Toca para expandir la red operativa."
-        }
+        aria-label="Grafo operativo SEBIN. Arrastrar = pan, pellizcar = zoom."
         onClick={() => {
           if (suppressClickRef.current) {
             suppressClickRef.current = false;
@@ -1625,7 +1622,7 @@ export function SebinBrainGraph({
             clearFocus();
             return;
           }
-          if (redExpandida) colapsarANucleo();
+          onSelect(null);
         }}
         onPointerDown={onBgPointerDown}
         onPointerMove={onBgPointerMove}
