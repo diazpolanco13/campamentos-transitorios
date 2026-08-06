@@ -6,7 +6,11 @@ import { useCasosSaludCentros } from "@/data/useCasosSaludCentros";
 import { useEventosReportes } from "@/data/useEventosReportes";
 import { useOcupacionesCentros } from "@/data/useOcupacionesCentros";
 import { useSupabaseQueryConEstado } from "@/data/useSupabaseQuery";
-import { actualizarCasoSalud, archivarCasoSalud } from "@/data/reposCasosSalud";
+import {
+  actualizarCasoSalud,
+  archivarCasoSalud,
+  desarchivarCasoSalud,
+} from "@/data/reposCasosSalud";
 import { claveDia } from "@/data/reposSupabase";
 import { desenvolver, type FilaSync } from "@/data/desenvolver";
 import type { CentroTransitorio } from "@/domain/centrosTransitorios";
@@ -197,6 +201,17 @@ export function IncidenciasFuncionariosView({ sesion }: { sesion: Sesion }) {
     }
   }
 
+  async function desarchivar(id: string) {
+    setAccionEnCursoId(id);
+    try {
+      await desarchivarCasoSalud(id);
+    } catch (err) {
+      console.error("[IncidenciasFuncionarios] error desarchivando caso:", err);
+    } finally {
+      setAccionEnCursoId(null);
+    }
+  }
+
   if (cargandoCentros) {
     return <BandejaIncidenciasSkeleton enMarco={false} />;
   }
@@ -380,12 +395,13 @@ export function IncidenciasFuncionariosView({ sesion }: { sesion: Sesion }) {
               <ListaSeguimientoReportes
                 items={visibles}
                 centrosPorId={centrosPorId}
-                mostrarAccionesSalud={estado === "seguimiento"}
+                mostrarAccionesSalud
                 puedeEditarSalud={(caso: CasoSaludCentro) =>
                   puedeEditarCentro(sesion.user, caso.centro_id)
                 }
                 onCambiarEstatusSalud={(id, est) => void cambiarEstatus(id, est)}
                 onArchivarSalud={(id) => void archivar(id)}
+                onDesarchivarSalud={(id) => void desarchivar(id)}
                 accionEnCursoId={accionEnCursoId}
               />
             )}

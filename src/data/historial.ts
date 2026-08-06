@@ -40,6 +40,7 @@ export type AccionHistorial =
   | "crear_caso_salud"
   | "actualizar_caso_salud"
   | "archivar_caso_salud"
+  | "desarchivar_caso_salud"
   | "registrar_refugiado"
   | "editar_refugiado"
   | "egreso_refugiado"

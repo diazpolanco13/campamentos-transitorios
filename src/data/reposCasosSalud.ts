@@ -136,6 +136,24 @@ export async function archivarCasoSalud(id: string): Promise<void> {
   registrarHistorial("archivar_caso_salud", "caso_salud", id);
 }
 
+/** Devuelve un caso archivado a `resuelto` (listo para reabrir o re-archivar). */
+export async function desarchivarCasoSalud(id: string): Promise<void> {
+  const now = Date.now();
+  const { error } = await supabase
+    .from("casos_salud_centros")
+    .update({
+      estatus: "resuelto",
+      archivada_ts: null,
+      resuelta_ts: now,
+      updated_at: now,
+      updated_by: usuarioActual(),
+    })
+    .eq("id", id)
+    .eq("estatus", "archivado");
+  if (error) throw new Error(`[reposCasosSalud] desarchivar: ${error.message}`);
+  registrarHistorial("desarchivar_caso_salud", "caso_salud", id);
+}
+
 export async function eliminarCasoSalud(id: string): Promise<void> {
   const { data: previo, error: errPrev } = await supabase
     .from("casos_salud_centros")

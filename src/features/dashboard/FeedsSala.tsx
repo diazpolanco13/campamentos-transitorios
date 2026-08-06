@@ -89,11 +89,14 @@ export function FeedCasosSalud({
   nombresCentros,
   hoy,
 }: BaseFeedProps & { casos: CasoSaludCentro[] }) {
-  const casosOrdenados = [...casos].sort(
-    (a, b) =>
-      META_ESTATUS_CASO_SALUD[a.estatus].orden -
-        META_ESTATUS_CASO_SALUD[b.estatus].orden || b.creada_ts - a.creada_ts,
-  );
+  // Solo abiertos (activo / en_proceso). Resuelto y archivado = histórico.
+  const casosOrdenados = [...casos]
+    .filter((c) => c.estatus === "activo" || c.estatus === "en_proceso")
+    .sort(
+      (a, b) =>
+        META_ESTATUS_CASO_SALUD[a.estatus].orden -
+          META_ESTATUS_CASO_SALUD[b.estatus].orden || b.creada_ts - a.creada_ts,
+    );
   if (casosOrdenados.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">Sin casos de salud activos.</p>

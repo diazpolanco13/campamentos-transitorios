@@ -49,10 +49,7 @@ import {
   ZONAS_SALA,
   type ZonaSala,
 } from "@/domain/redCentros";
-import {
-  casosSaludPendientes,
-  totalCasosSaludActivosRed,
-} from "@/domain/seguimientoReportes";
+import { casosSaludPendientes } from "@/domain/seguimientoReportes";
 import type { Sesion } from "@/data/authSupabase";
 import { useSupabaseConectado } from "@/data/useSupabaseConectado";
 import { Badge } from "@/components/ui/badge";
@@ -158,17 +155,18 @@ export function DashboardView({ sesion }: { sesion: Sesion }) {
 
   const { casos: casosSalud } = useCasosSaludCentros({ soloActivos: true });
   const casosSaludProd = useMemo(
-    () => casosSalud.filter((c) => !idCentroEsPrueba(c.centro_id)),
-    [casosSalud],
+    () =>
+      casosSalud.filter(
+        (c) => !idCentroEsPrueba(c.centro_id) && idsVisibles.has(c.centro_id),
+      ),
+    [casosSalud, idsVisibles],
   );
+  /** Abiertos: activo + en_proceso. Fuera: resuelto/archivado (histórico). */
   const casosPendientes = useMemo(
     () => casosSaludPendientes(casosSaludProd),
     [casosSaludProd],
   );
-  const casosActivos = useMemo(
-    () => totalCasosSaludActivosRed(casosSaludProd),
-    [casosSaludProd],
-  );
+  const casosActivos = casosPendientes.length;
 
   const hoy = claveDia(Date.now());
   const reportesHoy = useReportesCentros({ dia: hoy });

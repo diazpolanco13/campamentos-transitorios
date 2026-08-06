@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Archive,
+  ArchiveRestore,
   CalendarDays,
   CalendarPlus,
   Check,
@@ -31,6 +32,7 @@ import {
   actualizarCasoSalud,
   archivarCasoSalud,
   crearCasoSalud,
+  desarchivarCasoSalud,
   eliminarCasoSalud,
 } from "@/data/reposCasosSalud";
 import {
@@ -39,7 +41,11 @@ import {
   eliminarEventoReporte,
 } from "@/data/reposEventosReportes";
 import { claveDia } from "@/data/reposSupabase";
-import { ESTATUS_CASO_SALUD, puedeArchivarCasoSalud } from "@/domain/casosSalud";
+import {
+  ESTATUS_CASO_SALUD,
+  puedeArchivarCasoSalud,
+  puedeDesarchivarCasoSalud,
+} from "@/domain/casosSalud";
 import {
   casosSaludEnSeguimiento,
   casosSaludPendientes,
@@ -161,9 +167,11 @@ function TarjetaCasoSalud({
   onGuardar,
   onCambiarEstatus,
   onArchivar,
+  onDesarchivar,
   onEliminar,
   cambiando,
   archivando,
+  desarchivando,
   eliminando,
   guardando,
 }: {
@@ -177,16 +185,19 @@ function TarjetaCasoSalud({
   onGuardar: () => void;
   onCambiarEstatus: (estatus: EstatusCasoSalud) => void;
   onArchivar: () => void;
+  onDesarchivar: () => void;
   onEliminar: () => void;
   cambiando: boolean;
   archivando: boolean;
+  desarchivando: boolean;
   eliminando: boolean;
   guardando: boolean;
 }) {
   const meta = META_ESTATUS_CASO_SALUD[caso.estatus];
-  const ocupado = cambiando || archivando || eliminando || guardando;
+  const ocupado = cambiando || archivando || desarchivando || eliminando || guardando;
   const puedeCambiarEstatus = puedeEditar && !editando && caso.estatus !== "archivado";
   const puedeArchivar = puedeEditar && puedeArchivarCasoSalud(caso.estatus);
+  const puedeDesarchivar = puedeEditar && puedeDesarchivarCasoSalud(caso.estatus);
 
   if (editando) {
     return (
@@ -344,13 +355,48 @@ function TarjetaCasoSalud({
                     <AlertDialogHeader>
                       <AlertDialogTitle>¿Archivar caso de salud?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        «{caso.titulo}» pasará a Archivados. Podrás consultarlo después en esa
-                        pestaña.
+                        «{caso.titulo}» pasará a Archivados. Si te equivocas, podrás
+                        desarchivarlo desde esa pestaña.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancelar</AlertDialogCancel>
                       <AlertDialogAction onClick={onArchivar}>Archivar</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              {puedeDesarchivar && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="outline"
+                      disabled={ocupado}
+                      aria-label="Desarchivar caso"
+                      title="Desarchivar"
+                    >
+                      {desarchivando ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <ArchiveRestore className="size-4" />
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>¿Desarchivar caso de salud?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        «{caso.titulo}» volverá a En seguimiento como Resuelto. Podrás
+                        cambiar el estatus o archivarlo de nuevo.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={onDesarchivar}>
+                        Desarchivar
+                      </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
@@ -682,6 +728,7 @@ function SeguimientoExpandido({
   const [evolucionAbierta, setEvolucionAbierta] = useState(false);
   const [cambiandoId, setCambiandoId] = useState<string | null>(null);
   const [archivandoId, setArchivandoId] = useState<string | null>(null);
+  const [desarchivandoId, setDesarchivandoId] = useState<string | null>(null);
   const [eliminandoCasoId, setEliminandoCasoId] = useState<string | null>(null);
   const [guardandoCasoId, setGuardandoCasoId] = useState<string | null>(null);
   const [editandoCasoId, setEditandoCasoId] = useState<string | null>(null);
@@ -823,6 +870,17 @@ function SeguimientoExpandido({
       if (editandoCasoId === id) cancelarEdicionCaso();
     } finally {
       setArchivandoId(null);
+    }
+  }
+
+  async function desarchivar(id: string) {
+    setDesarchivandoId(id);
+    try {
+      await desarchivarCasoSalud(id);
+      await recargarCasos();
+      setSubSalud("seguimiento");
+    } finally {
+      setDesarchivandoId(null);
     }
   }
 
@@ -1051,10 +1109,12 @@ function SeguimientoExpandido({
                   onGuardar={() => void guardarCasoEditado(c.id)}
                   cambiando={cambiandoId === c.id}
                   archivando={archivandoId === c.id}
+                  desarchivando={desarchivandoId === c.id}
                   eliminando={eliminandoCasoId === c.id}
                   guardando={guardandoCasoId === c.id}
                   onCambiarEstatus={(est) => void cambiarEstatus(c.id, est)}
                   onArchivar={() => void archivar(c.id)}
+                  onDesarchivar={() => void desarchivar(c.id)}
                   onEliminar={() => void eliminarCaso(c.id)}
                 />
               ))}

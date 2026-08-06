@@ -1,7 +1,16 @@
 // Lista global de casos de salud y novedades del reporte diario.
 
 import { Link } from "react-router-dom";
-import { CalendarPlus, Circle, ExternalLink, Loader2, Stethoscope, ThumbsDown, ThumbsUp } from "lucide-react";
+import {
+  ArchiveRestore,
+  CalendarPlus,
+  Circle,
+  ExternalLink,
+  Loader2,
+  Stethoscope,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +35,7 @@ interface Props {
   puedeEditarSalud?: (caso: CasoSaludCentro) => boolean;
   onCambiarEstatusSalud?: (id: string, estatus: EstatusCasoSalud) => void;
   onArchivarSalud?: (id: string) => void;
+  onDesarchivarSalud?: (id: string) => void;
   accionEnCursoId?: string | null;
 }
 
@@ -76,6 +86,7 @@ function FilaCasoSalud({
   puedeEditar,
   onCambiarEstatus,
   onArchivar,
+  onDesarchivar,
   accionEnCurso,
 }: {
   caso: CasoSaludCentro;
@@ -84,6 +95,7 @@ function FilaCasoSalud({
   puedeEditar?: boolean;
   onCambiarEstatus?: (estatus: EstatusCasoSalud) => void;
   onArchivar?: () => void;
+  onDesarchivar?: () => void;
   accionEnCurso?: boolean;
 }) {
   const meta = META_ESTATUS_CASO_SALUD[caso.estatus];
@@ -118,6 +130,26 @@ function FilaCasoSalud({
           </div>
         </div>
       </div>
+
+      {mostrarAcciones && puedeEditar && caso.estatus === "archivado" && (
+        <div className="mt-3">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="w-full sm:w-auto"
+            disabled={accionEnCurso}
+            onClick={onDesarchivar}
+          >
+            {accionEnCurso ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <ArchiveRestore className="size-4" />
+            )}
+            Desarchivar
+          </Button>
+        </div>
+      )}
 
       {mostrarAcciones && puedeEditar && caso.estatus !== "archivado" && (
         <div className="mt-3 space-y-2">
@@ -219,6 +251,7 @@ export function ListaSeguimientoReportes({
   puedeEditarSalud,
   onCambiarEstatusSalud,
   onArchivarSalud,
+  onDesarchivarSalud,
   accionEnCursoId = null,
 }: Props) {
   if (items.length === 0) {
@@ -241,6 +274,7 @@ export function ListaSeguimientoReportes({
             puedeEditar={puedeEditarSalud?.(entry.item) ?? true}
             onCambiarEstatus={(est) => onCambiarEstatusSalud?.(entry.item.id, est)}
             onArchivar={() => onArchivarSalud?.(entry.item.id)}
+            onDesarchivar={() => onDesarchivarSalud?.(entry.item.id)}
             accionEnCurso={accionEnCursoId === entry.item.id}
           />
         ) : (

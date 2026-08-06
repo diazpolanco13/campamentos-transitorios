@@ -86,3 +86,8 @@ export function contarCasosSaludPorDia(
 export function puedeArchivarCasoSalud(estatus: EstatusCasoSalud): boolean {
   return estatus === "resuelto";
 }
+
+/** Solo archivados se pueden devolver a seguimiento (como resuelto). */
+export function puedeDesarchivarCasoSalud(estatus: EstatusCasoSalud): boolean {
+  return estatus === "archivado";
+}
