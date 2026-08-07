@@ -10,6 +10,10 @@ description: Importa Excel de censo externo a Importaciones Excel con validació
 Usar si usuario pide importar un `.xlsx` de censo, relaciones externas, SIIPOL,
 solicitados, registros policiales, o una planilla de campamento.
 
+**Listas solo-verificación SIIPOL** (contrainteligencia / antecedentes por
+campamento, sin alta de personas) → skill `importar-verificacion-siipol`
+(`--solo-marcar-siipol`).
+
 ## Entrada esperada
 
 - Archivo `.xlsx` accesible en VPS, preferido `tmp/<archivo>.xlsx` dentro del
@@ -154,34 +158,14 @@ Verificación Nexus (solo si el usuario lo pide):
 
 Verificación SIIPOL:
 
-- La fuente autoritativa es una lista explícita de personas enviadas a SIIPOL,
-  no una planilla general de censo ni la verificación Nexus.
-- Ejecutar primero:
-
-  ```bash
-  python3 scripts/importar_excel_censo.py \
-    --archivo "tmp/LISTA-SIIPOL.xlsx" \
-    --reconciliar-siipol \
-    --dry-run
-  ```
-
-- Tras confirmación explícita:
-
-  ```bash
-  python3 scripts/importar_excel_censo.py \
-    --archivo "tmp/LISTA-SIIPOL.xlsx" \
-    --reconciliar-siipol \
-    --aplicar
-  ```
-
-- `censo_reconciliar_siipol` reemplaza el estado previo: solo documentos
-  presentes quedan `verificado_siipol = true`.
-- Filas sin documento quedan pendientes; no hacer matching por nombre por
-  riesgo de homónimos.
-- Importaciones generales futuras no cambian la marca SIIPOL.
+- Preferir skill `importar-verificacion-siipol` (`--solo-marcar-siipol`) para
+  listas de antecedentes por campamento (marca + flags; no borra otras marcas).
+- `--reconciliar-siipol` solo si el usuario pide lista autoritativa global
+  (reemplaza marcas: solo documentos del Excel quedan verificados). Dry-run
+  primero; confirmar antes de `--aplicar`.
 - Nexus verifica identidad; **no** equivale a verificación SIIPOL.
-- **Nunca reimportar el mismo archivo** para hacer backfill: filas sin cédula
-  no tienen clave única y se duplicarían.
+- **Nunca reimportar el mismo archivo** para backfill de personas: filas sin
+  cédula se duplicarían.
 
 Seguridad:
 

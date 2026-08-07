@@ -3,6 +3,8 @@ import { lazy, Suspense, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   obtenerAlertasVerificacionCenso,
+  obtenerDelitosResumen,
+  type DelitosResumen,
   type RegistroCensoRed,
   type VerificacionCensoCentro,
 } from "@/data/reposCenso";
@@ -66,16 +68,18 @@ export function BotonReporteVerificacionCenso({
   const [errorAlertas, setErrorAlertas] = useState<string | null>(null);
   const [fechaCorteTs, setFechaCorteTs] = useState(0);
   const [alertas, setAlertas] = useState<PersonaAlertaVerificacion[]>([]);
+  const [delitos, setDelitos] = useState<DelitosResumen | null>(null);
 
   const datos = useMemo<DatosReporteVerificacionCenso>(
     () => ({
       filas: clonarFilas(filas),
       totales: { ...totales },
       alertas,
+      delitos,
       fechaCorteTs: fechaCorteTs || Date.now(),
       generadoPor,
     }),
-    [filas, totales, alertas, fechaCorteTs, generadoPor],
+    [filas, totales, alertas, delitos, fechaCorteTs, generadoPor],
   );
 
   const bloqueado =
@@ -86,8 +90,12 @@ export function BotonReporteVerificacionCenso({
     setCargandoAlertas(true);
     setFechaCorteTs(Date.now());
     try {
-      const filasAlerta = await obtenerAlertasVerificacionCenso();
+      const [filasAlerta, resumenDelitos] = await Promise.all([
+        obtenerAlertasVerificacionCenso(),
+        obtenerDelitosResumen(),
+      ]);
       setAlertas(mapearAlertas(filasAlerta));
+      setDelitos(resumenDelitos);
       setSolicitado(true);
     } catch (err) {
       setErrorAlertas(

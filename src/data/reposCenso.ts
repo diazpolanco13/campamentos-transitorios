@@ -198,6 +198,24 @@ export interface RegistroCensoGuardado {
   verificado_nexus_fuente?: string;
   /** Cédula con formato no consultable en Nexus (largo fuera de 6–8). */
   documento_invalido?: boolean;
+  categoria_delito_solicitado?: string | null;
+  categoria_delito_registro?: string | null;
+}
+
+export interface DelitoCategoriaFila {
+  slug: string;
+  etiqueta: string;
+  casos: number;
+}
+
+export interface DelitosResumenPanel {
+  total: number;
+  categorias: DelitoCategoriaFila[];
+}
+
+export interface DelitosResumen {
+  solicitados: DelitosResumenPanel;
+  registro_policial: DelitosResumenPanel;
 }
 
 /** Fila devuelta por censo_listado_red (registro + campamento). */
@@ -780,6 +798,7 @@ export interface FiltrosListadoCensoRed {
   solicitado?: string;
   registroPolicial?: string;
   verificadoSiipol?: string;
+  categoriaDelito?: string | null;
 }
 
 function paramsFiltrosListadoCensoRed(filtros: FiltrosListadoCensoRed) {
@@ -798,6 +817,28 @@ function paramsFiltrosListadoCensoRed(filtros: FiltrosListadoCensoRed) {
     // Dato político retirado: RPC aún acepta p_firmo; siempre null.
     p_firmo: null as boolean | null,
     p_verificado_siipol: boolFiltro(filtros.verificadoSiipol),
+    p_categoria_delito: filtros.categoriaDelito?.trim() || null,
+  };
+}
+
+/** Resumen de delitos (solicitados / reg. policial) para sala situacional. */
+export async function obtenerDelitosResumen(): Promise<DelitosResumen> {
+  const { data, error } = await supabase.rpc("censo_delitos_resumen");
+  if (error) throw new Error(error.message);
+  const raw = (data ?? {}) as Partial<DelitosResumen>;
+  const panel = (p: Partial<DelitosResumenPanel> | undefined): DelitosResumenPanel => ({
+    total: Number(p?.total ?? 0),
+    categorias: Array.isArray(p?.categorias)
+      ? p.categorias.map((c) => ({
+          slug: String(c.slug ?? ""),
+          etiqueta: String(c.etiqueta ?? c.slug ?? ""),
+          casos: Number(c.casos ?? 0),
+        }))
+      : [],
+  });
+  return {
+    solicitados: panel(raw.solicitados),
+    registro_policial: panel(raw.registro_policial),
   };
 }
 
@@ -811,6 +852,7 @@ export async function contarListadoCensoRed(filtros: FiltrosListadoCensoRed = {}
     p_registro_policial,
     p_firmo,
     p_verificado_siipol,
+    p_categoria_delito,
   } = paramsFiltrosListadoCensoRed(filtros);
   const { data, error } = await supabase.rpc("censo_listado_red_conteo", {
     p_centro_id,
@@ -820,6 +862,7 @@ export async function contarListadoCensoRed(filtros: FiltrosListadoCensoRed = {}
     p_registro_policial,
     p_firmo,
     p_verificado_siipol,
+    p_categoria_delito,
   });
   if (error) throw new Error(error.message);
   return Number(data ?? 0);
@@ -840,6 +883,7 @@ export async function obtenerListadoCensoRedPaginado(
     p_registro_policial,
     p_firmo,
     p_verificado_siipol,
+    p_categoria_delito,
   } = paramsFiltrosListadoCensoRed(filtros);
   const { data, error } = await supabase.rpc("censo_listado_red_paginado", {
     p_limit: filasPorPagina,
@@ -852,6 +896,7 @@ export async function obtenerListadoCensoRedPaginado(
     p_registro_policial,
     p_firmo,
     p_verificado_siipol,
+    p_categoria_delito,
   });
   if (error) throw new Error(error.message);
   return (data ?? []) as FilaListadoCensoRed[];

@@ -2,7 +2,7 @@
 // Reutiliza logos y franja del membrete dinámico (mismo patrón que estatus censo).
 
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import type { VerificacionCensoCentro } from "@/data/reposCenso";
+import type { DelitosResumen, VerificacionCensoCentro } from "@/data/reposCenso";
 import type { TotalesVerificacionCenso } from "@/data/useCensoVerificacion";
 import type { MembreteListo } from "@/lib/imagenPdf";
 
@@ -249,6 +249,118 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: 700,
     marginBottom: 4,
+  },
+  delitosRow: {
+    flexDirection: "row",
+    marginTop: 2,
+  },
+  delitosCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: borde,
+    borderRadius: 6,
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+  },
+  delitosCardPrimera: {
+    marginRight: 10,
+  },
+  delitosCardHeaderSol: {
+    backgroundColor: "#7f1d1d",
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: oroInstitucional,
+  },
+  delitosCardHeaderReg: {
+    backgroundColor: "#78350f",
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: oroInstitucional,
+  },
+  delitosCardTitulo: {
+    color: "#ffffff",
+    fontSize: 8,
+    fontWeight: 700,
+    flex: 1,
+    paddingRight: 6,
+  },
+  delitosCardTotal: {
+    color: oroInstitucional,
+    fontSize: 10,
+    fontWeight: 700,
+  },
+  delitosColHeader: {
+    flexDirection: "row",
+    backgroundColor: fondoSuave,
+    borderBottomWidth: 1,
+    borderBottomColor: borde,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+  },
+  delitosColHeaderTexto: {
+    color: gris,
+    fontSize: 6.5,
+    fontWeight: 700,
+    letterSpacing: 0.4,
+  },
+  delitosFila: {
+    flexDirection: "row",
+    paddingVertical: 3.5,
+    paddingHorizontal: 8,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#e8eef3",
+    alignItems: "center",
+  },
+  delitosFilaAlt: {
+    backgroundColor: "#f8fafc",
+  },
+  delitosFilaCat: {
+    flex: 1,
+    color: azul,
+    fontSize: 7.5,
+    paddingRight: 6,
+  },
+  delitosFilaCasos: {
+    width: 42,
+    textAlign: "right",
+    color: azulInstitucional,
+    fontSize: 8.5,
+    fontWeight: 700,
+  },
+  delitosFilaCasosSol: {
+    color: rojo,
+  },
+  delitosFilaCasosReg: {
+    color: ambar,
+  },
+  delitosPie: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: fondoSuave,
+    borderTopWidth: 1,
+    borderTopColor: borde,
+  },
+  delitosPieTexto: {
+    color: azul,
+    fontSize: 7.5,
+    fontWeight: 700,
+  },
+  delitosNota: {
+    marginTop: 8,
+    color: gris,
+    fontSize: 6.5,
+    lineHeight: 1.35,
   },
   barrasRow: {
     flexDirection: "row",
@@ -576,6 +688,125 @@ function EncabezadoTabla() {
   );
 }
 
+function TablaDelitosPdf({
+  titulo,
+  total,
+  categorias,
+  variante,
+  primera,
+}: {
+  titulo: string;
+  total: number;
+  categorias: { slug: string; etiqueta: string; casos: number }[];
+  variante: "sol" | "reg";
+  primera?: boolean;
+}) {
+  const headerStyle =
+    variante === "sol" ? styles.delitosCardHeaderSol : styles.delitosCardHeaderReg;
+  const casosStyle =
+    variante === "sol" ? styles.delitosFilaCasosSol : styles.delitosFilaCasosReg;
+
+  return (
+    <View style={[styles.delitosCard, primera ? styles.delitosCardPrimera : {}]}>
+      <View style={headerStyle}>
+        <Text style={styles.delitosCardTitulo}>{titulo}</Text>
+        <Text style={styles.delitosCardTotal}>{n(total)}</Text>
+      </View>
+      <View style={styles.delitosColHeader}>
+        <Text style={[styles.delitosColHeaderTexto, { flex: 1 }]}>CATEGORÍA</Text>
+        <Text style={[styles.delitosColHeaderTexto, { width: 42, textAlign: "right" }]}>
+          CASOS
+        </Text>
+      </View>
+      {categorias.map((c, i) => (
+        <View
+          key={`${variante}-${c.slug}`}
+          style={[styles.delitosFila, i % 2 === 1 ? styles.delitosFilaAlt : {}]}
+          wrap={false}
+        >
+          <Text style={styles.delitosFilaCat}>{c.etiqueta}</Text>
+          <Text style={[styles.delitosFilaCasos, casosStyle]}>{n(c.casos)}</Text>
+        </View>
+      ))}
+      <View style={styles.delitosPie}>
+        <Text style={styles.delitosPieTexto}>Total general</Text>
+        <Text style={[styles.delitosFilaCasos, casosStyle]}>{n(total)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function PaginaDelitosPdf({
+  delitos,
+  fechaCorteTs,
+  membrete,
+}: {
+  delitos: DelitosResumen;
+  fechaCorteTs: number;
+  membrete: MembreteListo;
+}) {
+  const sol = delitos.solicitados;
+  const reg = delitos.registro_policial;
+
+  return (
+    <Page size="LETTER" orientation="landscape" style={styles.page}>
+      <EncabezadoInstitucional generadoTs={fechaCorteTs} membrete={membrete} />
+
+      <View style={styles.contenido}>
+        <View style={styles.tituloBloque}>
+          <Text style={styles.tituloBloqueTexto}>
+            SALA SITUACIONAL — CONTABILIZACIÓN POR DELITO
+          </Text>
+        </View>
+
+        <View style={styles.corteCaja}>
+          <Text style={styles.corteLabel}>ALERTAS CLASIFICADAS POR TIPO DE DELITO</Text>
+          <Text style={styles.corteValor}>
+            Solicitados {n(sol.total)} · Reg. policial {n(reg.total)} · Corte{" "}
+            {fechaCorteLegible(fechaCorteTs)}
+          </Text>
+        </View>
+
+        <View style={styles.delitosRow}>
+          <TablaDelitosPdf
+            titulo="Personas en estatus de «Solicitados»"
+            total={sol.total}
+            categorias={sol.categorias}
+            variante="sol"
+            primera
+          />
+          <TablaDelitosPdf
+            titulo="Personas con historial / registro policial"
+            total={reg.total}
+            categorias={reg.categorias}
+            variante="reg"
+          />
+        </View>
+
+        <Text style={styles.delitosNota}>
+          Clasificación automática desde observaciones de verificación SIIPOL
+          (categoría primaria por severidad). «Sin indicar delito» solo cuando el
+          texto declara explícitamente que no indica o no especifica el delito.
+          Una persona con varios delitos cuenta en una sola categoría.
+        </Text>
+      </View>
+
+      <View style={styles.pie} fixed>
+        <Text style={styles.pieTexto}>
+          Contabilización por delito · corte {fechaCorteLegible(fechaCorteTs)} ·{" "}
+          {fechaHoraMilitar(fechaCorteTs)}
+        </Text>
+        <Text
+          style={styles.pieTexto}
+          render={({ pageNumber, totalPages }) =>
+            `Pág. ${pageNumber} / ${totalPages}`
+          }
+        />
+      </View>
+    </Page>
+  );
+}
+
 function EncabezadoTablaAlertas({
   mostrarTipoRegistro,
 }: {
@@ -814,6 +1045,8 @@ export interface DatosReporteVerificacionCenso {
   totales: TotalesVerificacionCenso;
   /** Personas solicitadas y/o con registro policial. */
   alertas: PersonaAlertaVerificacion[];
+  /** Contabilización por delito (RPC censo_delitos_resumen). */
+  delitos?: DelitosResumen | null;
   /** Epoch ms: fecha de corte de los datos (= momento de generación). */
   fechaCorteTs: number;
   generadoPor?: string;
@@ -880,13 +1113,12 @@ export function ReporteVerificacionCensoPdf({
   datos: DatosReporteVerificacionCenso;
   membrete: MembreteListo;
 }) {
-  const { filas, totales, alertas, fechaCorteTs, generadoPor } = datos;
+  const { filas, totales, alertas, delitos, fechaCorteTs, generadoPor } = datos;
   const ordenadas = ordenarPorNro(filas);
   const listaAlertas = alertas ?? [];
   const gruposMixtos = agruparAlertasPorCampamento(listaAlertas, filas);
   const totalSol = listaAlertas.filter((a) => a.solicitado).length;
   const totalReg = listaAlertas.filter((a) => a.registroPolicial).length;
-
   return (
     <Document
       title="Verificación poblacional — Importaciones Excel"
@@ -1037,6 +1269,14 @@ export function ReporteVerificacionCensoPdf({
           />
         </View>
       </Page>
+
+      {delitos ? (
+        <PaginaDelitosPdf
+          delitos={delitos}
+          fechaCorteTs={fechaCorteTs}
+          membrete={membrete}
+        />
+      ) : null}
 
       <AnexoAlertasPage
         titulo="ANEXO — SOLICITADOS Y REGISTRO POLICIAL POR CAMPAMENTO"

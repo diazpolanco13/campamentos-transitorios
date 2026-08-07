@@ -29,6 +29,7 @@ import { CensoRedTabs } from "@/features/censo/CensoRedTabs";
 import { CensoRegistrosTabla } from "@/features/censo/CensoRegistrosTabla";
 import { CENSO_SELECT_TRIGGER } from "@/features/censo/censoFormularioShared";
 import type { OrdenRegistrosCenso } from "@/features/censo/censoRegistrosUtil";
+import { DelitosSalaSituacional } from "@/features/censo/DelitosSalaSituacional";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -153,6 +154,10 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
   const [solicitado, setSolicitado] = useState<FiltroBinario>("todos");
   const [registroPolicial, setRegistroPolicial] = useState<FiltroBinario>("todos");
   const [verificadoSiipol, setVerificadoSiipol] = useState<FiltroBinario>("todos");
+  const [categoriaDelito, setCategoriaDelito] = useState<string | null>(null);
+  const [panelDelito, setPanelDelito] = useState<"solicitados" | "registro" | null>(
+    null,
+  );
   const [orden, setOrden] = useState<OrdenRegistrosCenso>("reciente");
 
   const {
@@ -175,9 +180,30 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
       solicitado,
       registroPolicial,
       verificadoSiipol,
+      categoriaDelito,
     },
     { enabled: tieneAcceso },
   );
+
+  function seleccionarDelito(panel: "solicitados" | "registro", slug: string) {
+    const mismo = panelDelito === panel && categoriaDelito === slug;
+    if (mismo) {
+      setPanelDelito(null);
+      setCategoriaDelito(null);
+      setSolicitado("todos");
+      setRegistroPolicial("todos");
+      return;
+    }
+    setPanelDelito(panel);
+    setCategoriaDelito(slug);
+    if (panel === "solicitados") {
+      setSolicitado("si");
+      setRegistroPolicial("todos");
+    } else {
+      setRegistroPolicial("si");
+      setSolicitado("todos");
+    }
+  }
 
   const campamentos = useMemo(
     () =>
@@ -220,6 +246,7 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
     solicitado !== "todos" ||
     registroPolicial !== "todos" ||
     verificadoSiipol !== "todos" ||
+    categoriaDelito != null ||
     orden !== "reciente";
 
   const obtenerFilasExportacion = useCallback(
@@ -438,23 +465,33 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
                   etiqueta="Solicitados"
                   icono={ShieldAlert}
                   clase="bg-red-500/10 text-red-600 dark:text-red-300"
-                  activo={solicitado === "si"}
-                  onClick={() =>
-                    setSolicitado((v) => (v === "si" ? "todos" : "si"))
-                  }
+                  activo={solicitado === "si" && !categoriaDelito}
+                  onClick={() => {
+                    setCategoriaDelito(null);
+                    setPanelDelito(null);
+                    setSolicitado((v) => (v === "si" ? "todos" : "si"));
+                  }}
                 />
                 <KpiPersona
                   valor={kpisImportaciones.conRegistroPolicial}
                   etiqueta="Reg. policial"
                   icono={ShieldCheck}
                   clase="bg-amber-500/10 text-amber-600 dark:text-amber-300"
-                  activo={registroPolicial === "si"}
-                  onClick={() =>
-                    setRegistroPolicial((v) => (v === "si" ? "todos" : "si"))
-                  }
+                  activo={registroPolicial === "si" && !categoriaDelito}
+                  onClick={() => {
+                    setCategoriaDelito(null);
+                    setPanelDelito(null);
+                    setRegistroPolicial((v) => (v === "si" ? "todos" : "si"));
+                  }}
                 />
               </div>
             </div>
+
+            <DelitosSalaSituacional
+              categoriaActiva={categoriaDelito}
+              panelActivo={panelDelito}
+              onSeleccionar={seleccionarDelito}
+            />
 
             <div>
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -661,6 +698,8 @@ export function CensoRedListadoView({ sesion }: { sesion: Sesion }) {
                   setSolicitado("todos");
                   setRegistroPolicial("todos");
                   setVerificadoSiipol("todos");
+                  setCategoriaDelito(null);
+                  setPanelDelito(null);
                   setOrden("reciente");
                 }}
               >

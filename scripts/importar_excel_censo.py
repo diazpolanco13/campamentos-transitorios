@@ -667,17 +667,24 @@ def parse_bool(valor: Any) -> bool:
 def inferir_flags_seguridad(obs: str) -> dict[str, bool]:
     """Deriva flags desde texto libre SIIPOL/contrainteligencia."""
     t = key(obs)
+    # Tolera typos: POLCIAL, RGISTROS, PLICIALES, POLIOCIAL, etc.
+    registro_policial = bool(
+        re.search(r"\bposee\s+r\w*\s*p[lo]\w*", t)
+        or re.search(r"\bregist?ros?\s+p[lo]\w*", t)
+        or "registro policial" in t
+        or "registros policiales" in t
+    )
     return {
-        "registro_policial": (
-            "posee registros policiales" in t
-            or "posee registro policial" in t
-            or "registros policiales" in t
-        ),
+        "registro_policial": registro_policial,
         # Filosofía operativa / SIIPOL: denuncia de persona extraviada
         # = búsqueda activa = solicitada (misma bandeja KPI Solicitados).
         "solicitado": (
             "se encuentra solicitado" in t
+            or "se encuentra solicitada" in t
+            or "se encuenta solicitado" in t  # typo frecuente
+            or "se encuenta solicitada" in t
             or "solicitado por" in t
+            or "solicitada por" in t
             or "persona extraviada" in t
             or "registra como persona extraviada" in t
             or "extraviada" in t
@@ -691,10 +698,13 @@ def scrub_dato_politico(obs: str) -> str:
     """Quita firmas de referéndum y afiliación política; conserva policial."""
     if not obs:
         return ""
+    # Presidente / gobierno; typo FRIMO; "en contra" / "contra"; "en el 2016".
     limpio = re.sub(
-        r"(?i)(,\s*)?(y\s+)?(s[ií]\s+)?firm[oó]\s+contra\s+el\s+presidente"
-        r"(\s+en\s+\d{4})?(\s+y\s+(\d{4}|firm[oó]\s+contra\s+el\s+presidente"
-        r"(\s+en\s+\d{4})?))?",
+        r"(?i)(,\s*)?(y\s+)?(s[ií]\s+)?(si\s+)?(firm[oó]|frimo)\s+(en\s+)?"
+        r"contra\s+(del?\s+|el\s+)?(presidente|gobierno)"
+        r"(\s+en\s+(el\s+)?\d{4})?"
+        r"(\s+y\s+(\d{4}|(firm[oó]|frimo)\s+(en\s+)?contra\s+(del?\s+|el\s+)?"
+        r"(presidente|gobierno)(\s+en\s+(el\s+)?\d{4})?))?",
         "",
         obs,
     )
@@ -1028,6 +1038,8 @@ _SIIPOL_MARCA_SIN_OBS = frozenset(
         "n/a",
         "na",
         "-",
+        "sin informacion de interes",
+        "sin informacion",
     }
 )
 
@@ -1149,6 +1161,14 @@ def fila_a_payload(
             "observación seguridad",
         )
     )
+    # Listas de verificación por campamento (columna autoritativa SIIPOL).
+    col_contrainteligencia = texto(
+        pick(
+            row,
+            "sistemas de contrainteligencia y siipol",
+            "sistemas de contrainteligencia",
+        )
+    )
     observaciones_generales = texto(
         pick(
             row,
@@ -1157,8 +1177,6 @@ def fila_a_payload(
             "observación",
             "informacion de interes",
             "información de interés",
-            "sistemas de contrainteligencia y siipol",
-            "sistemas de contrainteligencia",
         )
     )
     obs_desde_verificado = ""
@@ -1168,6 +1186,7 @@ def fila_a_payload(
         observaciones_seguridad_col
         or descripcion_verificacion
         or obs_desde_verificado
+        or col_contrainteligencia
         or observaciones_generales
     )
     flags_texto = inferir_flags_seguridad(observaciones)
@@ -1192,8 +1211,11 @@ def fila_a_payload(
         bool(col_verificado_siipol)
         or bool(descripcion_verificacion)
         or bool(observaciones_seguridad_col)
+        or bool(col_contrainteligencia)
     )
     observaciones = scrub_dato_politico(observaciones)
+    if key(observaciones) in _SIIPOL_MARCA_SIN_OBS:
+        observaciones = ""
     verificado_siipol = evidencia_siipol or any(
         (registro_policial, solicitado, deportado, bool(tipo_registro))
     )

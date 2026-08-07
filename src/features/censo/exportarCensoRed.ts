@@ -3,6 +3,7 @@
 
 import { type RegistroCensoRed } from "@/data/reposCenso";
 import { nombreCompletoRegistro } from "./censoRegistrosUtil";
+import { etiquetaDelito } from "./delitosCategoria";
 
 function fechaArchivo(): string {
   return new Date().toISOString().slice(0, 10);
@@ -182,7 +183,9 @@ function filaExcel(fila: RegistroCensoRed, numero: number): Record<string, strin
       : "",
     "Fuente verificación SIIPOL": fila.verificado_siipol_fuente ?? "",
     Solicitado: fila.solicitado ? "Sí" : "No",
+    "Categoría delito (solicitado)": etiquetaDelito(fila.categoria_delito_solicitado),
     "Registro policial": fila.registro_policial ? "Sí" : "No",
+    "Categoría delito (reg. policial)": etiquetaDelito(fila.categoria_delito_registro),
     Deportado: fila.deportado ? "Sí" : "No",
     "Tipo registro policial": fila.tipo_registro_policial ?? "",
     "Observaciones seguridad": fila.observaciones_seguridad ?? "",
