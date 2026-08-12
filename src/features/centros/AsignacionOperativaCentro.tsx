@@ -125,6 +125,7 @@ export function AsignacionOperativaCampos({
     ? (catalogoCuerpos.find((c) => c.clave === cuerpoFijo)?.label ?? null)
     : null;
   useEffect(() => {
+    // Nunca autoasignar en solo lectura (p. ej. operador en Supervisión).
     if (disabled || !cuerpoFijo || !labelCuerpoFijo) return;
     if (claveCuerpo !== cuerpoFijo) onCuerpoChange(labelCuerpoFijo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,6 +234,7 @@ export function AsignacionOperativaCampos({
             placeholder="Cuerpo"
             buscarPlaceholder="Buscar cuerpo…"
             onCambiar={(vals) => {
+              if (disabled) return;
               const clave = (vals[0] ?? "sin_asignar") as ClaveCuerpo;
               const meta = META_CUERPO[clave];
               onCuerpoChange(clave === "sin_asignar" ? "" : meta?.label ?? "");
@@ -256,6 +258,7 @@ export function AsignacionOperativaCampos({
             buscarPlaceholder="Buscar unidad o cuerpo…"
             vacioMensaje="Sin unidades de supervisión en el catálogo."
             onCambiar={(vals) => {
+              if (disabled) return;
               const clave = (vals[0] ?? "sin_asignar") as ClaveUnidadSebin;
               const meta = todasUnidades.find((u) => u.clave === clave);
               onSupervisionChange({ unidad_sebin: meta?.valorDb ?? "" });
@@ -279,6 +282,7 @@ export function AsignacionOperativaCampos({
             }
             vacioMensaje="Sin supervisores."
             onCambiar={(vals) => {
+              if (disabled) return;
               onSupervisionChange({ supervisor_sebin: vals[0] ?? "" });
             }}
           />
@@ -294,7 +298,10 @@ export function AsignacionOperativaCampos({
             buscarPlaceholder="Buscar analista…"
             vacioMensaje="Sin analistas."
             mostrarChips
-            onCambiar={(vals) => onSupervisionChange({ analistas_sae: vals })}
+            onCambiar={(vals) => {
+              if (disabled) return;
+              onSupervisionChange({ analistas_sae: vals });
+            }}
           />
         </CampoCompacto>
       </div>
@@ -344,6 +351,13 @@ export function AsignacionOperativaCentro({
     cuerpo?: string;
     supervision?: SupervisionCentro;
   }) {
+    // Gate duro: sin permiso no se escribe (UI disabled + trigger DB).
+    if (!puedeEditar) {
+      setError(
+        "Solo admin y analistas pueden modificar la asignación operativa.",
+      );
+      return;
+    }
     setError(null);
     setGuardando(true);
     const siguiente: CentroTransitorio = {
@@ -375,20 +389,22 @@ export function AsignacionOperativaCentro({
         cuerpo={c.cuerpo ?? ""}
         supervision={supervision}
         disabled={!puedeEditar || guardando}
-        onCuerpoChange={(cuerpo) =>
+        onCuerpoChange={(cuerpo) => {
+          if (!puedeEditar) return;
           void persistir({
             cuerpo,
             supervision: normalizarSupervision({
               ...supervision,
               unidad_sebin: "",
             }),
-          })
-        }
-        onSupervisionChange={(patch) =>
+          });
+        }}
+        onSupervisionChange={(patch) => {
+          if (!puedeEditar) return;
           void persistir({
             supervision: normalizarSupervision({ ...supervision, ...patch }),
-          })
-        }
+          });
+        }}
       />
       {guardando && (
         <p className="flex items-center gap-1 text-[10px] text-muted-foreground">

@@ -230,6 +230,14 @@ export function puedeGestionarCatalogosOperativos(rol: Rol): boolean {
 }
 
 /**
+ * Coordinación → Supervisión (cuerpo, unidad, revista, analistas): solo sala.
+ * Operador/supervisor ven la pestaña en solo lectura.
+ */
+export function puedeEditarAsignacionOperativa(rol: Rol): boolean {
+  return rol === "admin" || rol === "analista_sae";
+}
+
+/**
  * Entrar a /config/catalogos-operativos: admin, analista de red y analista
  * con cuerpo asignado (gestiona solo las unidades de su cuerpo). El analista
  * con lista manual de campamentos no gestiona catálogos.

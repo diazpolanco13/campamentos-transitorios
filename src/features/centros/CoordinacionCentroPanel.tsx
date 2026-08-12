@@ -10,6 +10,7 @@ import {
   Shield,
   Stethoscope,
 } from "lucide-react";
+import { useSesion } from "@/data/authSupabase";
 import { guardarCentro } from "@/data/reposSupabase";
 import { normalizarCentro, type CentroTransitorio } from "@/domain/centrosTransitorios";
 import {
@@ -23,6 +24,7 @@ import {
   type IdPestanaCoordinacion,
   type ResponsableCoordinacion,
 } from "@/domain/coordinacionCentro";
+import { puedeEditarAsignacionOperativa } from "@/domain/permisos";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -101,6 +103,12 @@ function descripcionPestana(id: IdPestana): string {
 
 /** Pestaña Coordinación: sub-pestañas por ámbito + diálogo para crear/editar responsables. */
 export function CoordinacionCentroPanel({ centro, puedeEditar }: Props) {
+  const sesion = useSesion();
+  const puedeEditarSupervision =
+    puedeEditar &&
+    sesion != null &&
+    puedeEditarAsignacionOperativa(sesion.user.rol);
+
   // Copia local: al guardar no esperamos Realtime para reflejar el cambio.
   const [centroLocal, setCentroLocal] = useState(centro);
   useEffect(() => {
@@ -319,6 +327,12 @@ export function CoordinacionCentroPanel({ centro, puedeEditar }: Props) {
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {descripcionPestana(pestana.id)}
                 </p>
+                {pestana.id === "supervision_rotatoria" && !puedeEditarSupervision && (
+                  <p className="mt-1 text-xs text-amber-600/90 dark:text-amber-400/90">
+                    Solo lectura: no puedes modificar nada en Supervisión. Solo
+                    admin y analistas pueden editarla.
+                  </p>
+                )}
               </div>
               {puedeEditar &&
                 pestana.id !== "supervision_rotatoria" &&
@@ -343,7 +357,7 @@ export function CoordinacionCentroPanel({ centro, puedeEditar }: Props) {
             {pestana.id === "supervision_rotatoria" ? (
               <AsignacionOperativaCentro
                 centro={centroLocal}
-                puedeEditar={puedeEditar}
+                puedeEditar={puedeEditarSupervision}
                 onActualizado={setCentroLocal}
               />
             ) : (
