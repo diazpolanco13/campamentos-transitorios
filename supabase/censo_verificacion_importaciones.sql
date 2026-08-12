@@ -1,5 +1,6 @@
 -- Dashboard de verificación de Importaciones Excel (origen=import_excel).
--- Una fila por campamento activo (incl. sin importaciones = ceros).
+-- Una fila por campamento (incl. sin importaciones = ceros).
+-- Incluye estatus_instalacion para etiquetar/filtrar «no instalados».
 
 drop function if exists public.censo_verificacion_por_centro();
 
@@ -8,6 +9,7 @@ returns table (
   centro_id text,
   centro_nro integer,
   centro_nombre text,
+  estatus_instalacion text,
   censadas bigint,
   menores bigint,
   adultos bigint,
@@ -39,6 +41,8 @@ begin
     c.id as centro_id,
     nullif(trim(c.data->>'nro'), '')::integer as centro_nro,
     coalesce(nullif(trim(c.data->>'nombre'), ''), c.id)::text as centro_nombre,
+    nullif(trim(c.data->'censo_oficial'->>'estatus_instalacion'), '')::text
+      as estatus_instalacion,
     coalesce(agg.censadas, 0::bigint) as censadas,
     coalesce(agg.menores, 0::bigint) as menores,
     coalesce(agg.adultos, 0::bigint) as adultos,

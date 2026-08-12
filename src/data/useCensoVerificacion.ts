@@ -19,6 +19,8 @@ export interface TotalesVerificacionCenso {
   campamentos: number;
   campamentosConLista: number;
   campamentosSinLista: number;
+  /** En proceso de instalación y sin planilla Excel (no exigibles). */
+  campamentosNoInstalados: number;
   censadas: number;
   menores: number;
   adultos: number;
@@ -33,6 +35,13 @@ export interface TotalesVerificacionCenso {
   conRegistro: number;
   campamentosConSolicitadas: number;
   campamentosConRegistro: number;
+}
+
+/** Centro aún en instalación MIJ y sin importación Excel. */
+export function esNoInstaladoSinExcel(f: VerificacionCensoCentro): boolean {
+  return (
+    f.estatusInstalacion === "proceso_de_instalacion" && f.censadas === 0
+  );
 }
 
 type FilaConUnidad = VerificacionCensoCentro & CentroConUnidad;
@@ -57,6 +66,7 @@ function sumarTotales(filas: VerificacionCensoCentro[]): TotalesVerificacionCens
     campamentos,
     campamentosConLista,
     campamentosSinLista: campamentos - campamentosConLista,
+    campamentosNoInstalados: contarUnidadesCon(unidades, esNoInstaladoSinExcel),
     censadas: 0,
     menores: 0,
     adultos: 0,

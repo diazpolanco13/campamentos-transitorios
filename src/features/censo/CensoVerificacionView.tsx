@@ -14,7 +14,10 @@ import {
 } from "lucide-react";
 import type { Sesion } from "@/data/authSupabase";
 import type { VerificacionCensoCentro } from "@/data/reposCenso";
-import { useCensoVerificacion } from "@/data/useCensoVerificacion";
+import {
+  esNoInstaladoSinExcel,
+  useCensoVerificacion,
+} from "@/data/useCensoVerificacion";
 import { puedeVerCensoRapidoRed } from "@/domain/permisos";
 import { CensoRedTabs } from "@/features/censo/CensoRedTabs";
 import { BotonReporteVerificacionCenso } from "@/features/censo/reporte-verificacion/BotonReporteVerificacionCenso";
@@ -48,7 +51,8 @@ type OrdenVerificacion =
   | "faltan"
   | "pct_verif"
   | "censadas"
-  | "sin_lista";
+  | "sin_lista"
+  | "no_instalados";
 
 const ORDENES: { valor: OrdenVerificacion; label: string }[] = [
   { valor: "nro", label: "N.º" },
@@ -58,6 +62,7 @@ const ORDENES: { valor: OrdenVerificacion; label: string }[] = [
   { valor: "pct_verif", label: "% verif." },
   { valor: "censadas", label: "Censadas" },
   { valor: "sin_lista", label: "Sin lista" },
+  { valor: "no_instalados", label: "No instalados" },
 ];
 
 function pct(parte: number, total: number): number {
@@ -105,6 +110,11 @@ function ordenarFilas(
       case "sin_lista": {
         const sa = a.censadas === 0 ? 0 : 1;
         const sb = b.censadas === 0 ? 0 : 1;
+        return sa - sb || compararNroNombre(a, b);
+      }
+      case "no_instalados": {
+        const sa = esNoInstaladoSinExcel(a) ? 0 : 1;
+        const sb = esNoInstaladoSinExcel(b) ? 0 : 1;
         return sa - sb || compararNroNombre(a, b);
       }
       case "nro":
@@ -204,13 +214,16 @@ export function CensoVerificacionView({ sesion }: { sesion: Sesion }) {
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLocaleLowerCase("es");
-    const filtradas = !q
+    let filtradas = !q
       ? filas
       : filas.filter(
           (f) =>
             f.centroNombre.toLocaleLowerCase("es").includes(q) ||
             (f.centroNro != null && String(f.centroNro).includes(q)),
         );
+    if (orden === "no_instalados") {
+      filtradas = filtradas.filter(esNoInstaladoSinExcel);
+    }
     return ordenarFilas(filtradas, orden);
   }, [busqueda, filas, orden]);
 
@@ -408,7 +421,9 @@ export function CensoVerificacionView({ sesion }: { sesion: Sesion }) {
                       </CardTitle>
                       <CardDescription>
                         {fmt(totales.campamentos)} centros ·{" "}
-                        {fmt(totales.campamentosSinLista)} sin lista importada.
+                        {fmt(totales.campamentosSinLista)} sin lista importada ·{" "}
+                        {fmt(totales.campamentosNoInstalados)} no instalados
+                        (sin Excel).
                       </CardDescription>
                     </div>
                     <div className="relative w-full sm:max-w-xs">
@@ -427,7 +442,7 @@ export function CensoVerificacionView({ sesion }: { sesion: Sesion }) {
                     className="gap-1.5"
                   >
                     <p className="text-[11px] font-medium text-muted-foreground">
-                      Ordenar por
+                      Ordenar / filtrar
                     </p>
                     <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/40 p-1">
                       {ORDENES.map((o) => (
@@ -476,6 +491,7 @@ export function CensoVerificacionView({ sesion }: { sesion: Sesion }) {
                         visibles.map((f) => {
                           const pctVerif = pctVerifFila(f);
                           const sinLista = f.censadas === 0;
+                          const noInstalado = esNoInstaladoSinExcel(f);
                           return (
                             <TableRow
                               key={f.centroId}
@@ -496,7 +512,15 @@ export function CensoVerificacionView({ sesion }: { sesion: Sesion }) {
                                   >
                                     {f.centroNombre}
                                   </Link>
-                                  {sinLista ? (
+                                  {noInstalado ? (
+                                    <Badge
+                                      variant="outline"
+                                      title="En proceso de instalación: no se exige planilla Excel"
+                                      className="shrink-0 border-amber-500/40 px-1 text-[9px] text-amber-700 dark:text-amber-300"
+                                    >
+                                      No instal.
+                                    </Badge>
+                                  ) : sinLista ? (
                                     <Badge
                                       variant="outline"
                                       className="shrink-0 px-1 text-[9px]"

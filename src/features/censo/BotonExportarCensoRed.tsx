@@ -78,12 +78,12 @@ export function BotonExportarCensoRed({
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={ocupado} onSelect={() => void exportar("pdf")}>
           <FileText className="size-4" />
-          PDF (todas)
+          PDF (filtros actuales)
           {exportando === "pdf" && <Loader2 className="ml-auto size-3.5 animate-spin" />}
         </DropdownMenuItem>
         <DropdownMenuItem disabled={ocupado} onSelect={() => void exportar("excel")}>
           <FileSpreadsheet className="size-4" />
-          Excel (todas)
+          Excel (filtros + delitos)
           {exportando === "excel" && <Loader2 className="ml-auto size-3.5 animate-spin" />}
         </DropdownMenuItem>
       </DropdownMenuContent>

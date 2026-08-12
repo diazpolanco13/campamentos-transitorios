@@ -162,26 +162,7 @@ function filaExcel(fila: RegistroCensoRed, numero: number): Record<string, strin
     Sexo: etiquetaSexo(fila.sexo),
     Teléfono: fila.telefono,
     Campamento: fila.centro_nombre,
-    "Parentesco jefe": fila.parentesco_jefe,
-    "Cédula jefe": fila.jefe_documento,
-    País: fila.pais,
-    Estado: fila.estado_federativo,
-    Municipio: fila.municipio,
-    Parroquia: fila.parroquia,
-    "Verificado Nexus": !fila.documento?.trim()
-      ? ""
-      : fila.verificado_nexus
-        ? "Sí"
-        : "No",
-    "Fecha verificación Nexus": fila.verificado_nexus_en
-      ? formatearFechaRegistro(fila.verificado_nexus_en)
-      : "",
-    "Fuente verificación Nexus": fila.verificado_nexus_fuente ?? "",
-    "Verificado SIIPOL": fila.verificado_siipol ? "Sí" : "No",
-    "Fecha verificación SIIPOL": fila.verificado_siipol_en
-      ? formatearFechaRegistro(fila.verificado_siipol_en)
-      : "",
-    "Fuente verificación SIIPOL": fila.verificado_siipol_fuente ?? "",
+    // Alertas primero tras identidad: AutoFilter por delito en Excel.
     Solicitado: fila.solicitado ? "Sí" : "No",
     "Categoría delito (solicitado)": etiquetaDelito(fila.categoria_delito_solicitado),
     "Registro policial": fila.registro_policial ? "Sí" : "No",
@@ -192,17 +173,119 @@ function filaExcel(fila: RegistroCensoRed, numero: number): Record<string, strin
     "Verificación seguridad": fila.verificacion_seguridad_en
       ? formatearFechaRegistro(fila.verificacion_seguridad_en)
       : "",
+    "Verificado SIIPOL": fila.verificado_siipol ? "Sí" : "No",
+    "Fecha verificación SIIPOL": fila.verificado_siipol_en
+      ? formatearFechaRegistro(fila.verificado_siipol_en)
+      : "",
+    "Fuente verificación SIIPOL": fila.verificado_siipol_fuente ?? "",
+    "Verificado Nexus": !fila.documento?.trim()
+      ? ""
+      : fila.verificado_nexus
+        ? "Sí"
+        : "No",
+    "Fecha verificación Nexus": fila.verificado_nexus_en
+      ? formatearFechaRegistro(fila.verificado_nexus_en)
+      : "",
+    "Fuente verificación Nexus": fila.verificado_nexus_fuente ?? "",
+    "Parentesco jefe": fila.parentesco_jefe,
+    "Cédula jefe": fila.jefe_documento,
+    País: fila.pais,
+    Estado: fila.estado_federativo,
+    Municipio: fila.municipio,
+    Parroquia: fila.parroquia,
     "Fecha registro": formatearFechaRegistro(fila.creado_en),
   };
+}
+
+/** Hoja alertas: categoría delito en col. A para filtrar rápido en Excel. */
+function filaExcelAlerta(
+  fila: RegistroCensoRed,
+  numero: number,
+  variante: "solicitado" | "registro",
+): Record<string, string | number | boolean> {
+  const categoria =
+    variante === "solicitado"
+      ? etiquetaDelito(fila.categoria_delito_solicitado)
+      : etiquetaDelito(fila.categoria_delito_registro);
+  return {
+    "Categoría delito": categoria,
+    "N°": numero,
+    "Primer nombre": fila.primer_nombre,
+    "Segundo nombre": fila.segundo_nombre,
+    "Primer apellido": fila.primer_apellido,
+    "Segundo apellido": fila.segundo_apellido,
+    "Tipo doc.": fila.tipo_doc ?? "",
+    Documento: fila.documento,
+    Edad: fila.edad ?? "",
+    Sexo: etiquetaSexo(fila.sexo),
+    Teléfono: fila.telefono,
+    Campamento: fila.centro_nombre,
+    Solicitado: fila.solicitado ? "Sí" : "No",
+    "Registro policial": fila.registro_policial ? "Sí" : "No",
+    Deportado: fila.deportado ? "Sí" : "No",
+    "Tipo registro policial": fila.tipo_registro_policial ?? "",
+    "Observaciones seguridad": fila.observaciones_seguridad ?? "",
+    "Verificado SIIPOL": fila.verificado_siipol ? "Sí" : "No",
+    "Fecha registro": formatearFechaRegistro(fila.creado_en),
+  };
+}
+
+type XlsxMod = typeof import("xlsx");
+
+function hojaConAutofiltro(
+  XLSX: XlsxMod,
+  filas: Record<string, string | number | boolean>[],
+  opts?: { anchoPrimera?: number },
+) {
+  const hoja = XLSX.utils.json_to_sheet(filas);
+  const ref = hoja["!ref"];
+  if (ref) {
+    hoja["!autofilter"] = { ref };
+    const rango = XLSX.utils.decode_range(ref);
+    const w0 = opts?.anchoPrimera ?? 14;
+    hoja["!cols"] = Array.from({ length: rango.e.c + 1 }, (_, i) => ({
+      wch: i === 0 ? w0 : 14,
+    }));
+  }
+  return hoja;
 }
 
 export async function exportarCensoRedExcel(filas: RegistroCensoRed[]): Promise<void> {
   if (filas.length === 0) throw new Error("No hay registros para exportar");
 
   const XLSX = await import("xlsx");
-  const datos = filas.map((f, i) => filaExcel(f, filas.length - i));
-  const hoja = XLSX.utils.json_to_sheet(datos);
   const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, "Personas");
+
+  const personas = filas.map((f, i) => filaExcel(f, filas.length - i));
+  XLSX.utils.book_append_sheet(
+    libro,
+    hojaConAutofiltro(XLSX, personas),
+    "Personas",
+  );
+
+  const solicitados = filas.filter((f) => f.solicitado);
+  if (solicitados.length > 0) {
+    const datos = solicitados.map((f, i) =>
+      filaExcelAlerta(f, solicitados.length - i, "solicitado"),
+    );
+    XLSX.utils.book_append_sheet(
+      libro,
+      hojaConAutofiltro(XLSX, datos, { anchoPrimera: 40 }),
+      "Solicitados",
+    );
+  }
+
+  const conRegistro = filas.filter((f) => f.registro_policial);
+  if (conRegistro.length > 0) {
+    const datos = conRegistro.map((f, i) =>
+      filaExcelAlerta(f, conRegistro.length - i, "registro"),
+    );
+    XLSX.utils.book_append_sheet(
+      libro,
+      hojaConAutofiltro(XLSX, datos, { anchoPrimera: 40 }),
+      "Reg. policial",
+    );
+  }
+
   XLSX.writeFile(libro, `importaciones-excel-personas-${fechaArchivo()}.xlsx`);
 }

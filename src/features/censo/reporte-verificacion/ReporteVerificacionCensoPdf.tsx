@@ -1149,7 +1149,7 @@ export function ReporteVerificacionCensoPdf({
             Fuente: Importaciones Excel · Menores de 18 años no se verifican ·
             Adulto verificado = Nexus o SIIPOL · {n(totales.campamentos)} campamentos ·{" "}
             {n(totales.campamentosConLista)} con lista · {n(totales.campamentosSinLista)}{" "}
-            sin lista
+            sin lista · {n(totales.campamentosNoInstalados)} no instalados
           </Text>
 
           <View style={styles.kpiRow}>

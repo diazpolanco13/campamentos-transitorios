@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { LogoCuerpo } from "@/components/LogoCuerpo";
 import {
   BedDouble,
@@ -7,6 +8,7 @@ import {
   ExternalLink,
   Info,
   Landmark,
+  Loader2,
   Package,
   Pencil,
   Shirt,
@@ -14,6 +16,7 @@ import {
   Trash,
   Users,
 } from "lucide-react";
+import { guardarCentro } from "@/data/reposSupabase";
 import {
   ESTADOS_CENTRO,
   ESTATUS_INSTALACION_OFICIAL,
@@ -25,6 +28,7 @@ import {
   totalJusticia,
   ubicacionCentro,
   type CentroTransitorio,
+  type EstadoCentro,
 } from "@/domain/centrosTransitorios";
 import {
   analisisCentro,
@@ -57,6 +61,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const ICONO_RECURSO: Record<ClaveRecurso, React.ReactNode> = {
@@ -151,10 +162,12 @@ function MiniKpi({ etiqueta, valor }: { etiqueta: string; valor: number }) {
 
 interface SeccionProps {
   centro: CentroTransitorio;
+  /** Si true, el estado operativo (En preparación / Operativo / …) es editable. */
+  puedeEditar?: boolean;
 }
 
 /** Badges de estado del centro; cupo solo si hay datos de capacidad registrados. */
-export function BadgesEstadoCentro({ centro }: SeccionProps) {
+export function BadgesEstadoCentro({ centro, puedeEditar = false }: SeccionProps) {
   const c = normalizarCentro(centro);
   const analisis = analisisCentro(centro);
   const estadoInfo = ESTADOS_CENTRO.find((e) => e.valor === c.estado);
@@ -163,16 +176,70 @@ export function BadgesEstadoCentro({ centro }: SeccionProps) {
   );
   const colorSemaforo = COLOR_SEMAFORO[analisis.semaforo];
   const mostrarCupo = analisis.semaforo !== "sin_datos";
+  const [guardandoEstado, setGuardandoEstado] = useState(false);
+  const [errorEstado, setErrorEstado] = useState<string | null>(null);
+
+  async function cambiarEstado(nuevo: EstadoCentro) {
+    if (nuevo === c.estado || guardandoEstado) return;
+    setErrorEstado(null);
+    setGuardandoEstado(true);
+    try {
+      await guardarCentro({ ...centro, estado: nuevo });
+    } catch (err) {
+      console.error("[BadgesEstadoCentro] error guardando estado:", err);
+      setErrorEstado(
+        err instanceof Error ? err.message : "No se pudo actualizar el estado",
+      );
+    } finally {
+      setGuardandoEstado(false);
+    }
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {estadoInfo && (
-        <Badge
-          variant="outline"
-          className="text-[10px]"
-          style={{ borderColor: `${estadoInfo.color}66`, color: estadoInfo.color }}
-        >
-          {estadoInfo.label}
-        </Badge>
+      {puedeEditar ? (
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <Select
+            value={c.estado}
+            disabled={guardandoEstado}
+            onValueChange={(v) => void cambiarEstado(v as EstadoCentro)}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Estado operativo"
+              className="h-7 w-auto min-w-[9.5rem] gap-1 border px-2 text-[10px] font-medium"
+              style={{
+                borderColor: `${estadoInfo?.color ?? "#64748b"}66`,
+                color: estadoInfo?.color,
+              }}
+            >
+              {guardandoEstado ? (
+                <Loader2 className="size-3 shrink-0 animate-spin" />
+              ) : null}
+              <SelectValue placeholder="Estado" />
+            </SelectTrigger>
+            <SelectContent>
+              {ESTADOS_CENTRO.map((s) => (
+                <SelectItem key={s.valor} value={s.valor} className="text-xs">
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {errorEstado ? (
+            <span className="max-w-[14rem] text-[10px] text-destructive">{errorEstado}</span>
+          ) : null}
+        </div>
+      ) : (
+        estadoInfo && (
+          <Badge
+            variant="outline"
+            className="text-[10px]"
+            style={{ borderColor: `${estadoInfo.color}66`, color: estadoInfo.color }}
+          >
+            {estadoInfo.label}
+          </Badge>
+        )
       )}
       {estatusInfo && (
         <Badge variant="outline" className="border-teal-500/40 text-[10px] text-teal-400">
