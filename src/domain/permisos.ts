@@ -471,6 +471,14 @@ export function esUsuarioTemporalTerreno(username: string): boolean {
 }
 
 /**
+ * Cuenta de la 1ª fase (link/QR): `operador-centro-XX-<hash>`.
+ * Distinta de `op-<cédula>` (identidad actual). Brain y roster no las mezclan.
+ */
+export function esCuentaLinkTerreno(username: string): boolean {
+  return /^operador-/.test(username.trim());
+}
+
+/**
  * Cuenta con credencial propia: puede ver/editar su ficha y cambiar su
  * contraseña. Un `op-<cédula>` deja de ser "temporal" cuando activó su
  * credencial (Fase 2 del plan de migración: `activado_ts` puesto por la

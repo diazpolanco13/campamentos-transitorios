@@ -13,6 +13,9 @@ import {
 import {
   META_SEVERIDAD_BRAIN,
   SEBIN_BRAIN_CORE_ID,
+  centroIdDeNodoOperador,
+  nodosOperadorDeCamp,
+  type OperadorBrain,
   type SebinBrainEdge,
   type SebinBrainGraph,
   type SebinBrainNode,
@@ -34,6 +37,7 @@ import {
   cyclicDeltaF,
   deltaGiroApex,
   focusWheel,
+  layoutFocoCampamento,
   layoutFocoUnidad,
   limbIdForCamp,
   rotateAbout,
@@ -86,17 +90,21 @@ const CX = VB_W / 2;
 const CY = VB_H / 2;
 const SCALE = 340;
 
-const RING_PX: Record<0 | 1 | 2, number> = {
+const RING_PX: Record<0 | 1 | 2 | 3, number> = {
   0: 0,
   1: SCALE * 0.42,
   2: SCALE * 0.82,
+  3: SCALE * 1.12,
 };
 
 const R_NODE: Record<SebinBrainNode["kind"], number> = {
   sebin: 36,
   unidad: 17,
   campamento: 7.5,
+  operador: 4.2,
 };
+
+const OPS_EMPTY: Map<string, OperadorBrain[]> = new Map();
 
 const WHEEL_GEOM = wheelStageGeom(VB_W, VB_H);
 const FOCUS_WHEEL = focusWheel(VB_W, VB_H, RING_PX[1]);
@@ -155,6 +163,17 @@ function shortLabel(n: SebinBrainNode): string {
 }
 
 /** Label de camp en abanico: denso → N.º o nombre muy corto; hover → nombre. */
+function opFanLabel(n: SebinBrainNode, emphasize: boolean): string {
+  const base = n.label.trim();
+  const first = base.split(/\s+/)[0] ?? base;
+  if (emphasize) {
+    if (base.length > 16) return `${base.slice(0, 14).trimEnd()}…`;
+    return base;
+  }
+  if (first.length > 10) return `${first.slice(0, 9).trimEnd()}…`;
+  return first;
+}
+
 function campFanLabel(
   n: SebinBrainNode,
   opts: { dense: boolean; emphasize: boolean },
@@ -222,6 +241,7 @@ export function SebinBrainGraph({
   onSelect,
   focusUnidadId,
   onFocusUnidadIdChange,
+  operadoresPorCentro = OPS_EMPTY,
   ocultarChromeFlotante = false,
   /** Incrementar desde padre: expandir red + zoom/pan a home. */
   vistaResetKey = 0,
@@ -233,6 +253,8 @@ export function SebinBrainGraph({
   /** Foco de unidad controlado por la vista (panel/lista/migas). */
   focusUnidadId: string | null;
   onFocusUnidadIdChange: (id: string | null) => void;
+  /** Operadores por centro. Overlay al seleccionar camp; no entran a d3-force. */
+  operadoresPorCentro?: Map<string, OperadorBrain[]>;
   /** Oculta zoom/migas/flechas (p. ej. panel lista abierto en móvil). */
   ocultarChromeFlotante?: boolean;
   vistaResetKey?: number;
@@ -283,6 +305,7 @@ export function SebinBrainGraph({
   const allTreesRef = useRef<Map<string, FocusLayoutResult>>(new Map());
   const unidadOrderRef = useRef<string[]>([]);
   const focusUnidadRef = useRef<string | null>(null);
+  const opsBoundsRef = useRef<Bounds | null>(null);
   const stagePhaseRef = useRef(0);
   const stageTargetRef = useRef(0);
   const stageVelRef = useRef(0);
@@ -294,7 +317,7 @@ export function SebinBrainGraph({
   const camStateRef = useRef({
     focusedUnidad: false,
     selectedId: null as string | null,
-    selectedKind: null as "campamento" | "unidad" | "sebin" | null,
+    selectedKind: null as "campamento" | "unidad" | "sebin" | "operador" | null,
     coreSolo: false,
   });
   const redExpandidaRef = useRef(true);
@@ -317,10 +340,32 @@ export function SebinBrainGraph({
   } | null>(null);
   const [userZoomUi, setUserZoomUi] = useState(1);
 
-  const byId = useMemo(
-    () => new Map(graph.nodes.map((n) => [n.id, n])),
-    [graph.nodes],
+  const selectedCampId = useMemo(() => {
+    if (!selectedId) return null;
+    if (selectedId.startsWith("camp:")) return selectedId;
+    const c = centroIdDeNodoOperador(selectedId);
+    return c ? `camp:${c}` : null;
+  }, [selectedId]);
+
+  const selectedCampNode = useMemo(
+    () =>
+      selectedCampId
+        ? (graph.nodes.find((n) => n.id === selectedCampId) ?? null)
+        : null,
+    [graph.nodes, selectedCampId],
   );
+
+  const opsBundle = useMemo(() => {
+    if (!selectedCampNode?.centroId) return { nodes: [] as SebinBrainNode[], edges: [] as SebinBrainEdge[] };
+    const ops = operadoresPorCentro.get(selectedCampNode.centroId) ?? [];
+    return nodosOperadorDeCamp(selectedCampNode, ops);
+  }, [selectedCampNode, operadoresPorCentro]);
+
+  const byId = useMemo(() => {
+    const m = new Map(graph.nodes.map((n) => [n.id, n]));
+    for (const n of opsBundle.nodes) m.set(n.id, n);
+    return m;
+  }, [graph.nodes, opsBundle.nodes]);
 
   const unidades = useMemo(
     () => graph.nodes.filter((n) => n.kind === "unidad"),
@@ -393,6 +438,28 @@ export function SebinBrainGraph({
   focusUnidadRef.current = focusUnidadId;
 
   const selectedMeta = selectedId ? byId.get(selectedId) : null;
+
+  const campSim = selectedCampNode
+    ? nodesRef.current.find((n) => n.id === selectedCampNode.id)
+    : null;
+  const unidadSim = selectedCampNode?.unidadClave
+    ? nodesRef.current.find(
+        (n) => n.id === `unidad:${selectedCampNode.unidadClave}`,
+      )
+    : null;
+  const opsLayout =
+    campSim && selectedCampNode && opsBundle.nodes.length > 0
+      ? layoutFocoCampamento({
+          campId: selectedCampNode.id,
+          camp: { x: campSim.x ?? CX, y: campSim.y ?? CY },
+          unidad: unidadSim
+            ? { x: unidadSim.x ?? CX, y: unidadSim.y ?? CY }
+            : null,
+          ops: opsBundle.nodes.map((n) => ({ id: n.id })),
+        })
+      : null;
+  opsBoundsRef.current = opsLayout?.bounds ?? null;
+
   redExpandidaRef.current = redExpandida;
   camStateRef.current = {
     focusedUnidad: !!focusUnidadId,
@@ -406,7 +473,9 @@ export function SebinBrainGraph({
     if (focusUnidadId) setRedExpandida(true);
   }, [focusUnidadId]);
   useEffect(() => {
-    if (selectedId?.startsWith("camp:")) setRedExpandida(true);
+    if (selectedId?.startsWith("camp:") || selectedId?.startsWith("op:")) {
+      setRedExpandida(true);
+    }
   }, [selectedId]);
 
   // Explosión radial al pasar de núcleo → red
@@ -816,6 +885,7 @@ export function SebinBrainGraph({
           focusUnidadPos: focusUnidadLayoutPos ?? posOf(focusUnidadIdNow),
           focusCenter: focusCenterRef.current,
           focusBounds: focusBoundsRef.current,
+          campOpsBounds: opsBoundsRef.current,
           coreSolo: c.coreSolo,
           corePos: { x: CX, y: CY },
         },
@@ -909,6 +979,16 @@ export function SebinBrainGraph({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (selectedId?.startsWith("op:")) {
+        const camp = selectedCampId ? byId.get(selectedCampId) : null;
+        onSelect(camp ?? null);
+        return;
+      }
+      if (selectedMeta?.kind === "campamento" && focusUnidadId) {
+        const u = byId.get(focusUnidadId);
+        onSelect(u ?? null);
+        return;
+      }
       if (focusUnidadId) {
         setFocusUnidadId(null);
         onSelect(null);
@@ -916,7 +996,7 @@ export function SebinBrainGraph({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focusUnidadId, onSelect]);
+  }, [focusUnidadId, selectedId, selectedCampId, selectedMeta?.kind, byId, onSelect]);
 
   // ── drag / pan táctil ─────────────────────────────────────────────────
   const simNode = (id: string) => nodesRef.current.find((n) => n.id === id) ?? null;
@@ -1193,6 +1273,10 @@ export function SebinBrainGraph({
       suppressClickRef.current = false;
       return;
     }
+    if (n.kind === "operador") {
+      onSelect(n);
+      return;
+    }
     if (n.kind === "sebin") {
       if (focusUnidadId) {
         // Sale del foco unidad; queda overview expandido
@@ -1220,7 +1304,11 @@ export function SebinBrainGraph({
 
   const focusNodeMeta = focusUnidadId ? byId.get(focusUnidadId) : undefined;
   const selectedCampMeta =
-    selectedMeta?.kind === "campamento" ? selectedMeta : null;
+    selectedMeta?.kind === "campamento"
+      ? selectedMeta
+      : selectedMeta?.kind === "operador"
+        ? selectedCampNode
+        : null;
   const focusIdx = focusUnidadId ? unidadOrder.indexOf(focusUnidadId) : -1;
 
   const volverAUnidad = () => {
@@ -1297,7 +1385,16 @@ export function SebinBrainGraph({
       return 0;
     }
     // camps: apex pleno; flanco whisper (abanico lateral preparado)
-    if (abs < APEX_EPS) return 1;
+    if (abs < APEX_EPS) {
+      if (
+        selectedCampId &&
+        n.kind === "campamento" &&
+        n.id !== selectedCampId
+      ) {
+        return 0.28;
+      }
+      return 1;
+    }
     if (abs <= RIM_VISIBLE) return 0.2;
     return 0;
   };
@@ -1368,15 +1465,18 @@ export function SebinBrainGraph({
         branchTarget === focusUnidadId
       );
     }
-    if (byId.get(selectedId)?.kind === "campamento") {
-      const lid = limbIdForCamp(selectedId);
+    const selKind = byId.get(selectedId)?.kind;
+    if (selKind === "campamento" || selKind === "operador") {
+      const campId =
+        selKind === "operador" ? (selectedCampId ?? selectedId) : selectedId;
+      const lid = limbIdForCamp(campId);
       return (
-        branchTarget === selectedId ||
+        branchTarget === campId ||
         branchTarget === lid ||
         (branchSource === SEBIN_BRAIN_CORE_ID &&
           branchTarget === focusUnidadId) ||
         (branchSource === focusUnidadId && branchTarget === lid) ||
-        (branchSource === lid && branchTarget === selectedId)
+        (branchSource === lid && branchTarget === campId)
       );
     }
     return false;
@@ -2285,6 +2385,88 @@ export function SebinBrainGraph({
               );
             })}
         </g>
+
+        {opsLayout && opsBundle.nodes.length > 0 && (
+          <g className="sebin-ops-overlay">
+            {opsLayout.branches.map((b) => {
+              const s = opsLayout.positions.get(b.source);
+              const t = opsLayout.positions.get(b.target);
+              if (!s || !t) return null;
+              const lit = selectedId === b.target;
+              const col =
+                byId.get(b.target)?.color ?? "var(--muted-foreground)";
+              return (
+                <path
+                  key={`op-e-${b.target}`}
+                  d={branchPath(s, t)}
+                  fill="none"
+                  stroke={col}
+                  strokeWidth={lit ? 1.6 : 1.05}
+                  strokeLinecap="round"
+                  opacity={lit ? 0.9 : 0.45}
+                  style={{ pointerEvents: "none" }}
+                />
+              );
+            })}
+            {opsBundle.nodes.map((n) => {
+              const p = opsLayout.positions.get(n.id);
+              if (!p) return null;
+              const r = R_NODE.operador;
+              const isSel = selectedId === n.id;
+              const isHover = hoverId === n.id;
+              const showLabel = isSel || isHover || !opsLayout.dense;
+              return (
+                <g
+                  key={n.id}
+                  transform={`translate(${p.x} ${p.y})`}
+                  style={{ cursor: "pointer" }}
+                  onMouseEnter={() => setHoverId(n.id)}
+                  onMouseLeave={() =>
+                    setHoverId((h) => (h === n.id ? null : h))
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(n);
+                  }}
+                >
+                  <circle r={9} fill="transparent" />
+                  {(isSel || isHover) && (
+                    <circle
+                      r={r + 5}
+                      fill="none"
+                      stroke="var(--foreground)"
+                      strokeWidth="1.4"
+                      opacity="0.85"
+                    />
+                  )}
+                  <circle
+                    r={r}
+                    fill={n.color}
+                    stroke="var(--background)"
+                    strokeWidth={1.2}
+                    filter={
+                      n.reportoHoy ? "url(#brainSoftGlow)" : undefined
+                    }
+                  />
+                  {showLabel && (
+                    <text
+                      y={r + 10}
+                      textAnchor="middle"
+                      style={{
+                        fontSize: isHover || isSel ? 7.5 : 6.5,
+                        fontWeight: isHover || isSel ? 700 : 600,
+                        fill: "var(--foreground)",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {opFanLabel(n, isHover || isSel)}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
       </svg>
     </div>
   );
@@ -2367,11 +2549,45 @@ export function DetalleNodoBrain({
   node,
   dia,
   novedades,
+  operadores,
+  onElegirOperador,
 }: {
   node: SebinBrainNode;
   dia: string;
   novedades?: NovedadesBrainResumen | null;
+  operadores?: OperadorBrain[];
+  onElegirOperador?: (op: OperadorBrain) => void;
 }) {
+  if (node.kind === "operador") {
+    const ok = Boolean(node.reportoHoy);
+    const col = ok
+      ? META_SEVERIDAD_BRAIN.ok.color
+      : META_SEVERIDAD_BRAIN.pendiente.color;
+    return (
+      <div className="space-y-2.5">
+        {node.sublabel && (
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            {node.sublabel}
+          </p>
+        )}
+        <div
+          className="rounded-lg border px-2.5 py-2"
+          style={{
+            borderColor: `color-mix(in oklab, ${col} 45%, var(--border))`,
+          }}
+        >
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Reporte hoy
+          </div>
+          <div className="mt-0.5 text-sm font-semibold" style={{ color: col }}>
+            {ok ? "Reportó" : "Sin reporte"}
+          </div>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">{dia}</p>
+        </div>
+      </div>
+    );
+  }
+
   const sev = META_SEVERIDAD_BRAIN[node.severidad];
   const metaReporte = node.estadoReporte
     ? META_ESTADO_REPORTE[node.estadoReporte]
@@ -2484,6 +2700,46 @@ export function DetalleNodoBrain({
           </div>
         )}
       </div>
+
+      {node.kind === "campamento" && operadores && operadores.length > 0 && (
+        <div className="rounded-lg border px-2.5 py-2">
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Operadores
+          </div>
+          <p className="mt-0.5 text-sm font-semibold text-foreground">
+            {operadores.length} asignado{operadores.length === 1 ? "" : "s"}
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              · {operadores.filter((o) => o.reportoHoy).length} reportó hoy
+            </span>
+          </p>
+          {onElegirOperador && (
+            <div className="mt-1.5 flex max-h-36 flex-col gap-1 overflow-y-auto">
+              {operadores.map((op) => (
+                <Button
+                  key={`${op.userId}:${op.centroId}`}
+                  type="button"
+                  size="sm"
+                  variant={op.reportoHoy ? "secondary" : "outline"}
+                  className="h-7 w-full justify-start px-2 text-[11px]"
+                  onClick={() => onElegirOperador(op)}
+                >
+                  <span
+                    className="mr-1.5 size-1.5 shrink-0 rounded-full"
+                    style={{
+                      background: op.reportoHoy
+                        ? META_SEVERIDAD_BRAIN.ok.color
+                        : META_SEVERIDAD_BRAIN.pendiente.color,
+                    }}
+                    aria-hidden
+                  />
+                  <span className="truncate">{op.label || op.username}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

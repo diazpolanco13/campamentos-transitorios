@@ -188,6 +188,95 @@ export function layoutFocoUnidad(input: FocusLayoutInput): FocusLayoutResult {
 
 export const DEPTH_Y = [UNIDAD_Y + 0.07, UNIDAD_Y, CAMP_Y1];
 
+// ── foco camp → operadores (micro-abanico, no anillo overview) ───────────
+
+const OP_R1 = 38;
+const OP_R2 = 58;
+const OP_TWO_RING_AT = 9;
+const OP_PAD = 28;
+
+export type FocusCampOpsInput = {
+  campId: string;
+  camp: Pt;
+  /** Unidad padre: el abanico apunta hacia afuera (opuesto a este punto). */
+  unidad?: Pt | null;
+  ops: { id: string }[];
+};
+
+export type FocusCampOpsResult = {
+  positions: Map<string, Pt>;
+  branches: FocusBranch[];
+  bounds: Bounds;
+  dense: boolean;
+};
+
+/** Operadores en arco alrededor del camp. 9+ → dos aros. */
+export function layoutFocoCampamento(
+  input: FocusCampOpsInput,
+): FocusCampOpsResult {
+  const { campId, camp, unidad, ops } = input;
+  const n = ops.length;
+  const dense = n >= OP_TWO_RING_AT;
+  const dx = camp.x - (unidad?.x ?? camp.x);
+  const dy = camp.y - (unidad?.y ?? camp.y + 48);
+  const base =
+    Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01 ? -Math.PI / 2 : Math.atan2(dy, dx);
+
+  const positions = new Map<string, Pt>();
+  const branches: FocusBranch[] = [];
+  positions.set(campId, { x: round2(camp.x), y: round2(camp.y) });
+
+  const placeRing = (
+    slice: { id: string }[],
+    radius: number,
+    span: number,
+  ) => {
+    const m = slice.length;
+    slice.forEach((op, i) => {
+      const t = m <= 1 ? 0.5 : i / (m - 1);
+      const a = base - span / 2 + t * span;
+      positions.set(op.id, {
+        x: round2(camp.x + Math.cos(a) * radius),
+        y: round2(camp.y + Math.sin(a) * radius),
+      });
+      branches.push({ source: campId, target: op.id, depth: 4 });
+    });
+  };
+
+  if (n === 1) {
+    placeRing(ops, OP_R1, 0);
+  } else if (n > 0 && !dense) {
+    const span = Math.min(Math.PI * 1.25, 0.38 * n + 0.55);
+    placeRing(ops, OP_R1, span);
+  } else if (n > 0) {
+    const n1 = Math.ceil(n / 2);
+    placeRing(ops.slice(0, n1), OP_R1, Math.PI * 1.35);
+    placeRing(ops.slice(n1), OP_R2, Math.PI * 1.5);
+  }
+
+  let minX = camp.x;
+  let maxX = camp.x;
+  let minY = camp.y;
+  let maxY = camp.y;
+  for (const p of positions.values()) {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  }
+  return {
+    positions,
+    branches,
+    dense,
+    bounds: {
+      minX: minX - OP_PAD,
+      minY: minY - OP_PAD,
+      maxX: maxX + OP_PAD,
+      maxY: maxY + OP_PAD,
+    },
+  };
+}
+
 // ── rim / wheel ──────────────────────────────────────────────────────────
 
 const RIM_EDGE_INSET = 88;

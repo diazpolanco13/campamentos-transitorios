@@ -1,5 +1,5 @@
 /**
- * Grafo operativo SEBIN → unidades de supervisión → campamentos.
+ * Grafo operativo SEBIN → unidades → campamentos → operadores (hoja bajo demanda).
  * Modelo puro (sin React/DOM). Severidad del día sube por anillos.
  */
 
@@ -11,7 +11,7 @@ import {
 import type { EstadoReporteDia } from "./reporteDiario";
 import { META_ESTADO_REPORTE } from "./reporteDiario";
 
-export type SebinBrainKind = "sebin" | "unidad" | "campamento";
+export type SebinBrainKind = "sebin" | "unidad" | "campamento" | "operador";
 
 /** Orden de severidad: mayor = más grave. */
 export type SeveridadBrain = "ok" | "pendiente" | "parcial" | "critica";
@@ -38,7 +38,7 @@ export type SebinBrainNode = {
   kind: SebinBrainKind;
   label: string;
   sublabel?: string;
-  ring: 0 | 1 | 2;
+  ring: 0 | 1 | 2 | 3;
   color: string;
   severidad: SeveridadBrain;
   /** Campamentos bajo este nodo (unidad/SEBIN). */
@@ -53,6 +53,10 @@ export type SebinBrainNode = {
   estadoReporte?: EstadoReporteDia;
   unidadClave?: string;
   centroId?: string;
+  /** Perfil (`perfiles.user_id`). Solo `kind: operador`. */
+  userId?: string;
+  /** Este operador guardó el reporte del día en este camp. */
+  reportoHoy?: boolean;
   /** Layout polar unitario (−1…1) antes de escalar al canvas. */
   angle: number;
   radius: number;
@@ -61,7 +65,7 @@ export type SebinBrainNode = {
 export type SebinBrainEdge = {
   source: string;
   target: string;
-  kind: "supervisa" | "opera";
+  kind: "supervisa" | "opera" | "asignado";
 };
 
 export type SebinBrainGraph = {
@@ -280,3 +284,73 @@ export function colorEstadoReporte(estado: EstadoReporteDia | undefined): string
 }
 
 export { SELF_ID as SEBIN_BRAIN_CORE_ID };
+
+/** Operador de terreno asignado a un campamento (hoja bajo demanda). */
+export type OperadorBrain = {
+  userId: string;
+  username: string;
+  label: string;
+  centroId: string;
+  reportoHoy: boolean;
+};
+
+export function idNodoOperador(userId: string, centroId: string): string {
+  return `op:${userId}:${centroId}`;
+}
+
+/** `op:<userId>:<centroId>` → centro. userId puede traer `:`; centro es el último segmento. */
+export function centroIdDeNodoOperador(id: string): string | null {
+  if (!id.startsWith("op:")) return null;
+  const i = id.lastIndexOf(":");
+  if (i <= 2) return null;
+  const centroId = id.slice(i + 1);
+  return centroId.length > 0 ? centroId : null;
+}
+
+export function etiquetaOperadorBrain(
+  p: Pick<OperadorBrain, "label" | "username">,
+): string {
+  const n = p.label.trim();
+  if (n) return n;
+  if (p.username) return `@${p.username}`;
+  return "Operador";
+}
+
+/** Nodos/aristas de operadores de un camp. Posición la pone `layoutFocoCampamento`. */
+export function nodosOperadorDeCamp(
+  camp: Pick<SebinBrainNode, "id" | "unidadClave" | "centroId">,
+  ops: OperadorBrain[],
+): { nodes: SebinBrainNode[]; edges: SebinBrainEdge[] } {
+  const centroId = camp.centroId;
+  if (!centroId) return { nodes: [], edges: [] };
+  const nodes: SebinBrainNode[] = [];
+  const edges: SebinBrainEdge[] = [];
+  const sorted = [...ops].sort((a, b) => {
+    if (a.reportoHoy !== b.reportoHoy) return a.reportoHoy ? -1 : 1;
+    return a.label.localeCompare(b.label, "es");
+  });
+  for (const op of sorted) {
+    const sev: SeveridadBrain = op.reportoHoy ? "ok" : "pendiente";
+    const id = idNodoOperador(op.userId, centroId);
+    nodes.push({
+      id,
+      kind: "operador",
+      label: etiquetaOperadorBrain(op),
+      sublabel: op.reportoHoy ? "Reportó hoy" : "Asignado",
+      ring: 3,
+      color: META_SEVERIDAD_BRAIN[sev].color,
+      severidad: sev,
+      camps: 0,
+      criticos: 0,
+      reportesOk: op.reportoHoy ? 1 : 0,
+      unidadClave: camp.unidadClave,
+      centroId,
+      userId: op.userId,
+      reportoHoy: op.reportoHoy,
+      angle: 0,
+      radius: 0,
+    });
+    edges.push({ source: camp.id, target: id, kind: "asignado" });
+  }
+  return { nodes, edges };
+}

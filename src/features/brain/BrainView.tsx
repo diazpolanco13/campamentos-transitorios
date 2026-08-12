@@ -9,6 +9,7 @@ import { useEstadoReporteHoy, fasesCompletadasHoy } from "@/data/useEstadoReport
 import { useCasosSaludCentros } from "@/data/useCasosSaludCentros";
 import { useEventosReportes } from "@/data/useEventosReportes";
 import { useDenuncias } from "@/data/useDenuncias";
+import { useOperadoresBrain } from "@/data/useOperadoresBrain";
 import { claveDia } from "@/data/reposSupabase";
 import { desenvolver, type FilaSync } from "@/data/desenvolver";
 import { aplicarPartesActualesACentros } from "@/domain/parteActualCentros";
@@ -23,7 +24,11 @@ import { centrosEnAlcanceUsuario, centrosVisiblesParaUsuario } from "@/domain/pe
 import { idsCentrosConAlertaCritica } from "@/domain/alertasCriticasCentro";
 import {
   buildSebinBrainGraph,
+  centroIdDeNodoOperador,
   estadoDesdeFases,
+  idNodoOperador,
+  nodosOperadorDeCamp,
+  type OperadorBrain,
   type PulseCentroBrain,
   type SebinBrainNode,
 } from "@/domain/sebinBrainGraph";
@@ -96,6 +101,7 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
   const { casos: casosSalud } = useCasosSaludCentros({ soloActivos: true });
   const { eventos: eventosHoy } = useEventosReportes({ dia: hoy });
   const denuncias = useDenuncias({ estado: "abierta", alcance: "activas" });
+  const operadoresPorCentro = useOperadoresBrain(hoy);
 
   const centros = useMemo(() => {
     const visibles = centrosVisiblesParaUsuario(
@@ -135,6 +141,13 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
     [centros, hoy, pulses],
   );
 
+  const selectedCampId = useMemo(() => {
+    if (!selectedId) return null;
+    if (selectedId.startsWith("camp:")) return selectedId;
+    const c = centroIdDeNodoOperador(selectedId);
+    return c ? `camp:${c}` : null;
+  }, [selectedId]);
+
   const graph = useMemo(() => {
     const hayFiltroUnidad = unidadesFiltro.size > 0;
     const hayFiltroEstado = filtrosReporte.size > 0;
@@ -142,6 +155,7 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
     const keep = new Set<string>(["sebin"]);
     if (focusUnidadId) keep.add(focusUnidadId);
     if (selectedId) keep.add(selectedId);
+    if (selectedCampId) keep.add(selectedCampId);
     for (const n of graphFull.nodes) {
       if (n.kind === "campamento") {
         const enFiltro =
@@ -183,16 +197,41 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
         (e) => keep.has(e.source) && keep.has(e.target),
       ),
     };
-  }, [graphFull, filtrosReporte, unidadesFiltro, focusUnidadId, selectedId]);
+  }, [graphFull, filtrosReporte, unidadesFiltro, focusUnidadId, selectedId, selectedCampId]);
+
+  const selectedCampNode = useMemo(
+    () =>
+      selectedCampId
+        ? (graphFull.nodes.find((n) => n.id === selectedCampId) ?? null)
+        : null,
+    [graphFull.nodes, selectedCampId],
+  );
+
+  const opsDelCamp = useMemo(() => {
+    if (!selectedCampNode?.centroId) return [];
+    return operadoresPorCentro.get(selectedCampNode.centroId) ?? [];
+  }, [selectedCampNode, operadoresPorCentro]);
+
+  const opsNodes = useMemo(
+    () =>
+      selectedCampNode
+        ? nodosOperadorDeCamp(selectedCampNode, opsDelCamp).nodes
+        : [],
+    [selectedCampNode, opsDelCamp],
+  );
 
   const selected = useMemo(
-    () => graphFull.nodes.find((n) => n.id === selectedId) ?? null,
-    [graphFull.nodes, selectedId],
+    () =>
+      graphFull.nodes.find((n) => n.id === selectedId) ??
+      opsNodes.find((n) => n.id === selectedId) ??
+      null,
+    [graphFull.nodes, opsNodes, selectedId],
   );
 
   const estadosFilas = useMemo(() => calcularEstadosFilas(centros), [centros]);
   const centroSeleccionadoId =
-    selected?.kind === "campamento" ? (selected.centroId ?? null) : null;
+    selected?.centroId ??
+    (selected?.kind === "campamento" ? (selected.centroId ?? null) : null);
 
   function alternarUnidadFiltro(clave: ClaveUnidadSebin) {
     setUnidadesFiltro((prev) => {
@@ -251,6 +290,8 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
     let scope = eventos;
     if (selected.kind === "campamento" && selected.centroId) {
       scope = eventos.filter((e) => e.centro_id === selected.centroId);
+    } else if (selected.kind === "operador" && selected.centroId) {
+      scope = eventos.filter((e) => e.centro_id === selected.centroId);
     } else if (selected.kind === "unidad" && selected.unidadClave) {
       const ids = new Set(
         graphFull.nodes
@@ -288,7 +329,9 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
         ? "Unidad"
         : selected?.kind === "campamento"
           ? "Campamento"
-          : undefined;
+          : selected?.kind === "operador"
+            ? "Operador"
+            : undefined;
 
   const panelEscritorio = Boolean(selected) && !esMovil;
   /**
@@ -296,7 +339,9 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
    * sin tapar el grafo.
    */
   const sheetMovil =
-    Boolean(selected) && esMovil && selected?.kind === "campamento";
+    Boolean(selected) &&
+    esMovil &&
+    (selected?.kind === "campamento" || selected?.kind === "operador");
   /** Top ocupado: KPI/migas o foco — liberar zona superior del lienzo. */
   const chromeSuperiorOcupado = Boolean(focusUnidadId) || panelEscritorio;
 
@@ -318,6 +363,7 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
         onSelect={onSelect}
         focusUnidadId={focusUnidadId}
         onFocusUnidadIdChange={setFocusUnidadId}
+        operadoresPorCentro={operadoresPorCentro}
         ocultarChromeFlotante={panelCentrosAbierto && esMovil}
         vistaResetKey={vistaResetKey}
         className="h-full w-full"
@@ -453,6 +499,11 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
             selected={selected}
             dia={hoy}
             novedades={novedadesSelected}
+            operadores={opsDelCamp}
+            onElegirOperador={(op) => {
+              if (!op.centroId) return;
+              setSelectedId(idNodoOperador(op.userId, op.centroId));
+            }}
             onAbrirReporte={() =>
               navegar(
                 `/centros/reportes/${selected.centroId}?vista=reporte&dia=${hoy}`,
@@ -499,6 +550,11 @@ export function BrainView({ sesion }: { sesion: Sesion }) {
                 selected={selected}
                 dia={hoy}
                 novedades={novedadesSelected}
+                operadores={opsDelCamp}
+                onElegirOperador={(op) => {
+                  if (!op.centroId) return;
+                  setSelectedId(idNodoOperador(op.userId, op.centroId));
+                }}
                 onAbrirReporte={() =>
                   navegar(
                     `/centros/reportes/${selected.centroId}?vista=reporte&dia=${hoy}`,
@@ -599,6 +655,8 @@ function DetalleAccionesBrain({
   selected,
   dia,
   novedades,
+  operadores,
+  onElegirOperador,
   onAbrirReporte,
   onAbrirSeguimiento,
   onAbrirBandeja,
@@ -606,6 +664,8 @@ function DetalleAccionesBrain({
   selected: SebinBrainNode;
   dia: string;
   novedades?: NovedadesBrainResumen | null;
+  operadores?: OperadorBrain[];
+  onElegirOperador?: (op: OperadorBrain) => void;
   onAbrirReporte: () => void;
   onAbrirSeguimiento: () => void;
   onAbrirBandeja: () => void;
@@ -615,7 +675,13 @@ function DetalleAccionesBrain({
 
   return (
     <div className="space-y-2.5">
-      <DetalleNodoBrain node={selected} dia={dia} novedades={novedades} />
+      <DetalleNodoBrain
+        node={selected}
+        dia={dia}
+        novedades={novedades}
+        operadores={operadores}
+        onElegirOperador={onElegirOperador}
+      />
       {selected.centroId && (
         <div className="flex flex-col gap-1.5">
           {esCritica ? (

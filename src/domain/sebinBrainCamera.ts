@@ -10,8 +10,10 @@ export type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
 export type CameraState = {
   focusedUnidad: boolean;
-  selectedKind?: "campamento" | "unidad" | "sebin" | null;
+  selectedKind?: "campamento" | "unidad" | "sebin" | "operador" | null;
   selectedNodePos?: Pt | null;
+  /** Camp + operadores (clic hoja). Gana sobre zoom estrecho de nodo. */
+  campOpsBounds?: Bounds | null;
   /** Posición layout de la unidad en foco (centrado horizontal). */
   focusUnidadPos?: Pt | null;
   focusCenter?: Pt | null;
@@ -81,10 +83,45 @@ function frameBounds(view: ViewSize, b: Bounds, padFrac: number): Rect {
   };
 }
 
+/** Enmarca cluster camp+ops: más cerca que el árbol, más aire que ZOOM_NODE. */
+function frameCluster(view: ViewSize, b: Bounds): Rect {
+  const pad = 18;
+  let w = b.maxX - b.minX + pad * 2;
+  let h = b.maxY - b.minY + pad * 2;
+  const aspect = view.w / view.h;
+  if (w / h > aspect) h = w / aspect;
+  else w = h * aspect;
+  const minW = view.w * 0.28;
+  const maxW = view.w * 0.58;
+  if (w < minW) {
+    const s = minW / w;
+    w = minW;
+    h *= s;
+  } else if (w > maxW) {
+    const s = maxW / w;
+    w = maxW;
+    h *= s;
+  }
+  const cx = (b.minX + b.maxX) / 2;
+  const cy = (b.minY + b.maxY) / 2;
+  return {
+    x: round2(cx - w / 2),
+    y: round2(cy - h / 2),
+    w: round2(w),
+    h: round2(h),
+  };
+}
+
 export function cameraRect(view: ViewSize, s: CameraState): Rect {
   if (s.coreSolo) {
     const c = s.corePos ?? { x: view.w / 2, y: view.h / 2 };
     return frameOn(view, c, ZOOM_CORE);
+  }
+  if (
+    s.campOpsBounds &&
+    (s.selectedKind === "campamento" || s.selectedKind === "operador")
+  ) {
+    return frameCluster(view, s.campOpsBounds);
   }
   if (s.selectedKind === "campamento" && s.selectedNodePos) {
     return frameOn(view, s.selectedNodePos, ZOOM_NODE);
