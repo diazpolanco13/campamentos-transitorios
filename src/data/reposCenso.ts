@@ -1,18 +1,15 @@
-// Censo rápido en terreno (sin login): RPCs censo_registrar /
-// censo_actualizar / censo_eliminar / censo_listado / censo_completar /
-// censo_cierre. La escritura pasa por funciones security definer en Supabase;
-// el rol anon no tiene acceso directo a las tablas y, desde la migración
-// tokens_terreno_censo, sin sesión cada RPC exige el token de terreno del
-// campamento (?t= del QR). Con sesión autenticada el token es irrelevante.
+// Censo nominal: RPCs censo_registrar / censo_actualizar / censo_eliminar /
+// censo_listado / censo_completar / censo_cierre. Escritura vía security
+// definer. Cutover §7: ya no se envía token personal; hace falta sesión
+// autenticada con alcance (acceso_censo_centro).
 
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import type { ResumenCensoCentro } from "@/domain/censoResumen";
-import { tokenTerrenoActual } from "@/lib/tokenTerreno";
 import { supabase } from "./supabaseClient";
 
-/** Token de terreno a adjuntar en las RPC (null si el dispositivo no tiene). */
+/** Firma RPC aún acepta p_token; cutover: siempre null. */
 function tokenActual(): string | null {
-  return tokenTerrenoActual() || null;
+  return null;
 }
 
 /** PostgREST/Supabase devuelve como máximo 1000 filas por petición RPC. */
@@ -718,6 +715,8 @@ export interface VerificacionCensoCentro {
   centroId: string;
   centroNro: number | null;
   centroNombre: string;
+  /** `instalado` | `proceso_de_instalacion` | null */
+  estatusInstalacion: string | null;
   censadas: number;
   menores: number;
   adultos: number;
@@ -736,6 +735,7 @@ type FilaVerificacionCensoCentro = {
   centro_id?: string;
   centro_nro?: number | null;
   centro_nombre?: string;
+  estatus_instalacion?: string | null;
   censadas?: number;
   menores?: number;
   adultos?: number;
@@ -756,10 +756,16 @@ function mapearVerificacionCensoCentro(
   const nroRaw = fila.centro_nro;
   const centroNro =
     nroRaw == null || Number.isNaN(Number(nroRaw)) ? null : Number(nroRaw);
+  const estatusRaw = fila.estatus_instalacion;
+  const estatusInstalacion =
+    estatusRaw == null || String(estatusRaw).trim() === ""
+      ? null
+      : String(estatusRaw).trim();
   return {
     centroId: String(fila.centro_id ?? ""),
     centroNro,
     centroNombre: String(fila.centro_nombre ?? fila.centro_id ?? ""),
+    estatusInstalacion,
     censadas: Number(fila.censadas ?? 0),
     menores: Number(fila.menores ?? 0),
     adultos: Number(fila.adultos ?? 0),

@@ -1,24 +1,14 @@
-// Token de acceso de terreno (?t=<token> en /terreno y /censo): identifica y
-// autoriza el campamento del QR sin crear usuarios individuales. Las RPC
-// públicas del censo lo exigen cuando no hay sesión (ver
-// supabase/tokens_terreno.sql). Se recuerda en localStorage para que la
-// página guardada en la pantalla de inicio siga funcionando aunque el enlace
-// pierda la query.
+// Token de terreno: cutover §7 — el acceso por `?t=` personal quedó
+// deshabilitado. Solo queda el token `publico` de denuncias y la limpieza
+// de la clave legacy en localStorage.
 
 const STORAGE_KEY = "refugio.token_terreno";
 
 /**
- * Dominio público donde se sirve el portal de terreno. Los QR impresos y los
- * enlaces compartidos SIEMPRE apuntan a producción (nunca al dev server ni a
- * la IP del VPS): un QR pegado en un campamento debe sobrevivir a cualquier
- * cambio de entorno local.
+ * Dominio público de la PWA. Los QR de denuncias apuntan siempre a
+ * producción (nunca al dev server).
  */
 export const URL_PORTAL_TERRENO = "https://m0n1t0r-d3-3v3nt0s.net";
-
-/** Enlace de terreno (personal: reporte + censo) a partir de su token. */
-export function enlaceTerreno(token: string): string {
-  return `${URL_PORTAL_TERRENO}/terreno?t=${encodeURIComponent(token)}`;
-}
 
 /** Enlace público de denuncias de un campamento a partir de su token 'publico'. */
 export function enlaceDenuncia(token: string): string {
@@ -26,9 +16,13 @@ export function enlaceDenuncia(token: string): string {
 }
 
 /**
- * Tareas del menú de /terreno. Sirven como deep-link (`?tarea=`) desde el
- * sidebar de la sesión de operador para volver al portal ya apuntado.
+ * @deprecated Cutover: el portal QR personal ya no existe.
+ * Conservado por si algún deep-link viejo lo importa; siempre redirige a `/`.
  */
+export function enlaceTerreno(_token: string): string {
+  return `${URL_PORTAL_TERRENO}/`;
+}
+
 export type TareaTerreno =
   | "reporte"
   | "geo"
@@ -36,77 +30,54 @@ export type TareaTerreno =
   | "capacidad"
   | "censo";
 
-/** Ruta relativa al portal de terreno (misma origen; conserva el token). */
-export function urlPortalTerreno(opts?: {
-  token?: string;
-  tarea?: TareaTerreno;
-}): string {
-  const token = (opts?.token ?? tokenTerrenoActual()).trim();
-  const params = new URLSearchParams();
-  if (token) params.set("t", token);
-  if (opts?.tarea) params.set("tarea", opts.tarea);
-  const q = params.toString();
-  return q ? `/terreno?${q}` : "/terreno";
-}
-
-/**
- * Navega al portal de terreno con recarga completa: `/terreno` vive en el
- * bootstrap ligero (`censo-entry`), no en el AppShell de React Router.
- *
- * Sin token de QR el portal es un callejón sin salida (no puede canjear
- * sesión ni volver al home): el operador con credencial propia va al AppShell
- * (`/`) y `rutaInicialDeRol` lo deja en su vista inicial.
- */
-export function irAlPortalTerreno(opts?: {
-  token?: string;
-  tarea?: TareaTerreno;
-}): void {
-  const token = (opts?.token ?? tokenTerrenoActual()).trim();
-  if (!token) {
-    window.location.assign("/");
-    return;
-  }
-  window.location.assign(urlPortalTerreno(opts));
-}
-
-/** Lee y valida `?tarea=` del portal (o null si no viene / no es válida). */
-export function tareaTerrenoDeUrl(search = window.location.search): TareaTerreno | null {
-  const raw = new URLSearchParams(search).get("tarea")?.trim() ?? "";
-  if (
-    raw === "reporte" ||
-    raw === "geo" ||
-    raw === "autoridades" ||
-    raw === "capacidad" ||
-    raw === "censo"
-  ) {
-    return raw;
-  }
+/** @deprecated Cutover: portal QR retirado. */
+export function tareaTerrenoDeUrl(_search = window.location.search): TareaTerreno | null {
   return null;
 }
 
-/** Token vigente del dispositivo: el de la URL gana y se recuerda. */
-export function tokenTerrenoActual(): string {
-  const deUrl = new URLSearchParams(window.location.search).get("t")?.trim() ?? "";
-  if (deUrl) {
-    try {
-      localStorage.setItem(STORAGE_KEY, deUrl);
-    } catch {
-      // Modo privado: sin persistencia, el token vive solo en la URL.
-    }
-    return deUrl;
-  }
-  try {
-    return localStorage.getItem(STORAGE_KEY)?.trim() ?? "";
-  } catch {
-    return "";
-  }
+/** @deprecated Cutover: no hay portal QR; devolver inicio. */
+export function urlPortalTerreno(_opts?: {
+  token?: string;
+  tarea?: TareaTerreno;
+}): string {
+  return "/";
 }
 
-/** Borra el token recordado (p. ej. si el servidor lo rechaza como revocado). */
+/** @deprecated Cutover: navega al AppShell (login o home). */
+export function irAlPortalTerreno(_opts?: {
+  token?: string;
+  tarea?: TareaTerreno;
+}): void {
+  olvidarTokenTerreno();
+  window.location.assign("/");
+}
+
+/** @deprecated Cutover: siempre null; ya no se lee ni persiste `?t=` personal. */
+export function tokenTerrenoActual(): string {
+  return "";
+}
+
+/** Borra la clave legacy del token personal (p. ej. al aterrizar en / o /terreno). */
 export function olvidarTokenTerreno(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
     // Modo privado: nada que borrar.
   }
+}
+
+/** ¿Hay sesión Supabase persistida en este dispositivo? (sin importar supabase-js). */
+export function haySesionSupabaseLocal(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const clave = localStorage.key(i) ?? "";
+      if (clave.startsWith("sb-") && clave.endsWith("-auth-token")) {
+        const raw = localStorage.getItem(clave);
+        if (raw && raw.includes("access_token")) return true;
+      }
+    }
+  } catch {
+    // Modo privado.
+  }
+  return false;
 }

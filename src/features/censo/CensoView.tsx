@@ -106,7 +106,7 @@ import {
   debeMostrarInstrucciones,
   marcarInstruccionesVistas,
 } from "@/lib/instruccionesCampo";
-import { tokenTerrenoActual, urlPortalTerreno } from "@/lib/tokenTerreno";
+import { tokenTerrenoActual } from "@/lib/tokenTerreno";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "censo_funcionario_v1";
@@ -637,19 +637,14 @@ export function CensoView() {
               <span className="hidden sm:inline">Iniciar registro</span>
               <span className="sm:hidden">Inicio</span>
             </button>
-            {/* Con token del QR se vuelve al portal de terreno; con sesión por
-                contraseña (sin token) el portal sería un callejón sin salida:
-                se vuelve al sistema (/) y rutaInicialDeRol redirige. */}
             <a
-              href={tokenTerrenoActual() ? urlPortalTerreno() : "/"}
+              href="/"
               className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-primary-foreground/25 bg-primary-foreground/10 px-2.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary-foreground/20 sm:px-3 sm:text-sm"
-              aria-label={
-                tokenTerrenoActual() ? "Volver al portal de terreno" : "Volver al sistema"
-              }
-              title={tokenTerrenoActual() ? "Portal de terreno" : "Volver al sistema"}
+              aria-label="Volver al sistema"
+              title="Volver al sistema"
             >
               <LayoutGrid className="size-3.5 shrink-0" aria-hidden />
-              <span>{tokenTerrenoActual() ? "Portal" : "Volver"}</span>
+              <span>Volver</span>
             </a>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

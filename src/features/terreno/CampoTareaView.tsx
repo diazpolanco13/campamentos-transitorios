@@ -1,11 +1,8 @@
 // Trabajo de terreno dentro del AppShell (`/campo/:tarea`).
 //
-// El operador con credencial propia (Fase 2 del plan de migración) trabaja
-// como cualquier usuario del sistema: menú lateral fijo y cambio de vista
-// rápido por rutas SPA — sin pasar por el portal mobile-first `/terreno`,
-// que sigue vivo para el acceso por QR. Reusa los mismos paneles del portal
-// (geolocalización, autoridades, capacidad); si el operador reporta en
-// varios campamentos, un selector cambia de centro sin salir de la vista.
+// El operador con credencial propia trabaja en el AppShell: menú lateral y
+// rutas SPA /campo/*. Reusa paneles de geolocalización, autoridades y
+// capacidad. Cutover §7: sin portal QR.
 
 import { useMemo, useState } from "react";
 import { Navigate, useParams } from "react-router-dom";

@@ -37,7 +37,6 @@ import {
   puedeVerCensoCentro,
   centrosEnAlcanceUsuario,
 } from "@/domain/permisos";
-import { irAlPortalTerreno } from "@/lib/tokenTerreno";
 import { aplicarPartesActualesACentros } from "@/domain/parteActualCentros";
 import { controlReportado, reporteControlDelDia } from "@/domain/controlReporte";
 import {
@@ -460,7 +459,8 @@ export function FichaCentroView({ sesion }: Props) {
   }
 
   function volverPortalTerreno() {
-    irAlPortalTerreno();
+    // Cutover: sin portal QR; el operador vuelve a reportes.
+    navigate("/centros/reportes");
   }
 
   function cerrarReporte() {
@@ -760,7 +760,7 @@ export function FichaCentroView({ sesion }: Props) {
           ) : (
             <>
               <div className="hidden shrink-0 sm:block">
-                <BadgesEstadoCentro centro={centro} />
+                <BadgesEstadoCentro centro={centro} puedeEditar={puedeEditar} />
               </div>
               {puedeEditar && hoyEstado !== "completo" && (
                 <Button
@@ -795,7 +795,7 @@ export function FichaCentroView({ sesion }: Props) {
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2 sm:hidden">
-              <BadgesEstadoCentro centro={centro} />
+              <BadgesEstadoCentro centro={centro} puedeEditar={puedeEditar} />
             </div>
           )
         }

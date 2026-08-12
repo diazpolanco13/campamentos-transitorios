@@ -8,7 +8,6 @@ import { esRolTerreno } from "@/domain/permisos";
 import { usePathnameNavegacion } from "@/contexts/PathnameNavegacionContext";
 import { migasPanDeRuta, type MigaPan } from "@/layouts/migasPan";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { irAlPortalTerreno } from "@/lib/tokenTerreno";
 import { cn } from "@/lib/utils";
 import {
   Breadcrumb,
@@ -59,13 +58,9 @@ function MigasPanLista({
                   </BreadcrumbPage>
                 ) : irPortal ? (
                   <BreadcrumbLink asChild>
-                    <button
-                      type="button"
-                      className="cursor-pointer truncate"
-                      onClick={() => irAlPortalTerreno()}
-                    >
+                    <Link to="/centros/reportes" className="truncate">
                       {miga.label}
-                    </button>
+                    </Link>
                   </BreadcrumbLink>
                 ) : (
                   <BreadcrumbLink asChild>

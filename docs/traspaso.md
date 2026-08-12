@@ -122,31 +122,18 @@ datos viven en Postgres.
  `personal` + 61 `publico` activos (los `publico` los usará el canal de
  denuncias de la Fase 3 — pendiente, junto con la Fase 4: subdominio +
  cerrar :5173 del VPS). **Ficha del campamento:** sección "Acceso de
- terreno" en la pestaña Resumen (`AccesoTerrenoCentro.tsx`, solo la ven
- admin/analista por RLS) con el enlace `?t=`, QR generado en el navegador
- (lib `qrcode`), copiar y descargar PNG; los enlaces usan
- `URL_PORTAL_TERRENO` (dominio de producción, nunca el dev server). Un
- **trigger** (`centros_generar_tokens`, migración `tokens_centro_auto`) crea
- los tokens automáticamente al registrar un campamento nuevo.
-- ✅ **Login de terreno por QR (Fase 2, 09-jul):** Edge Function
- **`login-terreno`** (referencia en `supabase/functions/login-terreno/`):
- valida el token `personal`, **crea sobre la marcha** el usuario compartido
- `operador-<centro_id>` (email sintético, SIN contraseña, rol `operador` con
- ese único centro asignado, hash_id de servidor) y devuelve el
- `hashed_token` de un magiclink que el frontend canjea con
- `supabase.auth.verifyOtp` → sesión real y la RLS de siempre. El QR es la
- única credencial y es revocable. Frontend: `src/data/loginTerreno.ts`
- (`asegurarSesionTerreno`: respeta sesiones personales, re-loguea si el
- dispositivo cambia de campamento) y el botón "Reporte diario" de `/terreno`
- entra directo autenticado. Registra `crear_usuario_terreno` y
- `login_terreno` en `historial`. Verificado E2E contra producción: la sesión
- emitida solo ve/escribe su centro. **Alcance del QR (decisión 09-jul):** la
- sesión de terreno (rol `operador`) queda reducida a **Reporte + Población +
- Infraestructura de sus campamentos**: rutas solo `/centros/reportes*`
- (`esRolTerreno`/`rutaInicialDeRol`/`rutaPermitidaParaRol` en `permisos.ts`,
- patrón censo_rapido), menú de un solo item (AppSidebar) y pestañas de la
- ficha filtradas (`SECCIONES_FICHA_TERRENO`; coordinación y seguimiento
- ocultas). Además, migración **`blindaje_lectura_refugiados`** (referencia en
+ terreno" existió en Resumen (`AccesoTerrenoCentro`); **retirado en cutover
+ 11-ago-2026**. Un **trigger** (`centros_generar_tokens`) crea solo el token
+ `publico` (denuncias) al registrar/actualizar un campamento.
+- ✅ **Login de terreno por QR (Fase 2, 09-jul) → CUTOVER 11-ago-2026:** el
+ acceso por `/terreno?t=` y edges `login-terreno` / `activar-operador` fueron
+ **deshabilitados (410)**. Tokens `personal` revocados; operadores entran solo
+ con usuario y contraseña. Histórico del canje magiclink en git. Migración
+ `cutover_cerrar_token_personal`. Denuncias `/denuncia?t=` (`publico`) siguen.
+ **Alcance del operador (rol `operador`):** **Reporte + Población +
+ Infraestructura de sus campamentos**: rutas `/centros/reportes*` /
+ `/campo/*` / `/registro?centro=`, menú reducido (AppSidebar) y pestañas
+ filtradas (`SECCIONES_FICHA_TERRENO`). Además, migración **`blindaje_lectura_refugiados`** (referencia en
  `supabase/blindaje_lectura_refugiados.sql`): `refugiados_select` y
  `beneficios_otorgados_select` estaban en `true` (¡toda sesión autenticada
  leía la ficha humanitaria de toda la red!) → ahora admin/analista/autoridad

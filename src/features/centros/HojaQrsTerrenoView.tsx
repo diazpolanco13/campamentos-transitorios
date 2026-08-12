@@ -1,9 +1,6 @@
-// Hoja imprimible de QRs de terreno (/qrs-terreno, solo admin/analista_sae):
-// una página por campamento con sus dos códigos — el del PERSONAL (reporte y
-// censo, secreto) y el PÚBLICO de denuncias (para pegar en carteleras). Los
-// QRs se generan en el navegador (lib `qrcode`) y se imprimen con
-// window.print(); un truco CSS de visibilidad deja en el papel solo las
-// hojas, sin el marco de la app. Al sumar campamentos nuevos basta reimprimir.
+// Hoja imprimible de QRs de denuncias (/qrs-terreno, solo admin/analista_sae):
+// una página por campamento con el QR público (carteleras). Cutover §7: el QR
+// personal de terreno ya no se genera ni imprime.
 
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
@@ -16,15 +13,10 @@ import type { CentroTransitorio } from "@/domain/centrosTransitorios";
 import { centrosDeProduccion } from "@/domain/centrosTransitorios";
 import { puedeImprimirQrsTerreno } from "@/domain/permisos";
 import { Button } from "@/components/ui/button";
-import { enlaceDenuncia, enlaceTerreno } from "@/lib/tokenTerreno";
+import { enlaceDenuncia } from "@/lib/tokenTerreno";
 
 interface Props {
   sesion: Sesion;
-}
-
-interface QrsCentro {
-  personal?: string;
-  publico?: string;
 }
 
 export function HojaQrsTerrenoView({ sesion }: Props) {
@@ -41,7 +33,7 @@ export function HojaQrsTerrenoView({ sesion }: Props) {
     [filasCentros],
   );
 
-  const [qrs, setQrs] = useState<Map<string, QrsCentro>>(new Map());
+  const [qrs, setQrs] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState("");
   const [generando, setGenerando] = useState(true);
 
@@ -50,13 +42,15 @@ export function HojaQrsTerrenoView({ sesion }: Props) {
     (async () => {
       try {
         const tokens = await listarTokensTerrenoActivos();
-        const mapa = new Map<string, QrsCentro>();
+        const mapa = new Map<string, string>();
         for (const t of tokens) {
-          const url = t.tipo === "personal" ? enlaceTerreno(t.token) : enlaceDenuncia(t.token);
-          const dataUrl = await QRCode.toDataURL(url, { width: 512, margin: 1 });
+          if (t.tipo !== "publico") continue;
+          const dataUrl = await QRCode.toDataURL(enlaceDenuncia(t.token), {
+            width: 512,
+            margin: 1,
+          });
           if (cancelado) return;
-          const previo = mapa.get(t.centro_id) ?? {};
-          mapa.set(t.centro_id, { ...previo, [t.tipo]: dataUrl });
+          mapa.set(t.centro_id, dataUrl);
         }
         if (!cancelado) setQrs(mapa);
       } catch (err) {
@@ -92,10 +86,10 @@ export function HojaQrsTerrenoView({ sesion }: Props) {
 
       <div className="flex flex-wrap items-center gap-3 print:hidden">
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold">Hoja de QRs por campamento</h1>
+          <h1 className="text-lg font-semibold">Hoja de QRs de denuncias</h1>
           <p className="text-xs text-muted-foreground">
-            Una página por campamento: el QR del personal (guárdelo con el equipo del centro) y el
-            QR público de denuncias (péguelo en carteleras, comedores y baños).
+            Una página por campamento con el QR público de denuncias (péguelo en carteleras,
+            comedores y baños). El acceso del personal es solo con usuario y contraseña.
           </p>
         </div>
         <Button type="button" onClick={() => window.print()} disabled={generando || centros.length === 0}>
@@ -113,8 +107,8 @@ export function HojaQrsTerrenoView({ sesion }: Props) {
 
       <div className="hoja-qrs-imprimible space-y-6 bg-white text-black">
         {centros.map((c) => {
-          const q = qrs.get(c.id);
-          if (!q) return null;
+          const qr = qrs.get(c.id);
+          if (!qr) return null;
           return (
             <section
               key={c.id}
@@ -128,39 +122,20 @@ export function HojaQrsTerrenoView({ sesion }: Props) {
                 {c.parroquia && <p className="text-sm text-neutral-600">{c.parroquia}</p>}
               </header>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2 rounded-lg border-2 border-neutral-800 p-4 text-center">
-                  <p className="text-sm font-bold uppercase tracking-wide">Uso del personal</p>
-                  {q.personal && (
-                    <img
-                      src={q.personal}
-                      alt={`QR del personal de ${c.nombre}`}
-                      className="mx-auto w-full max-w-56"
-                    />
-                  )}
-                  <p className="text-xs leading-snug text-neutral-600">
-                    Reporte diario y censo del campamento. <strong>No publicar:</strong> entréguelo
-                    solo al equipo que trabaja en el centro.
-                  </p>
-                </div>
-
-                <div className="space-y-2 rounded-lg border-2 border-neutral-800 p-4 text-center">
-                  <p className="text-sm font-bold uppercase tracking-wide">
-                    Denuncias y sugerencias
-                  </p>
-                  {q.publico && (
-                    <img
-                      src={q.publico}
-                      alt={`QR de denuncias de ${c.nombre}`}
-                      className="mx-auto w-full max-w-56"
-                    />
-                  )}
-                  <p className="text-xs leading-snug text-neutral-600">
-                    Para los damnificados: escanee y reporte de forma <strong>anónima</strong>{" "}
-                    cualquier problema con la comida, dotaciones, trato o seguridad. Péguelo en
-                    carteleras y zonas comunes.
-                  </p>
-                </div>
+              <div className="mx-auto max-w-sm space-y-2 rounded-lg border-2 border-neutral-800 p-4 text-center">
+                <p className="text-sm font-bold uppercase tracking-wide">
+                  Denuncias y sugerencias
+                </p>
+                <img
+                  src={qr}
+                  alt={`QR de denuncias de ${c.nombre}`}
+                  className="mx-auto w-full max-w-56"
+                />
+                <p className="text-xs leading-snug text-neutral-600">
+                  Para los damnificados: escanee y reporte de forma <strong>anónima</strong>{" "}
+                  cualquier problema con la comida, dotaciones, trato o seguridad. Péguelo en
+                  carteleras y zonas comunes.
+                </p>
               </div>
 
               <p className="text-center text-[10px] text-neutral-500">

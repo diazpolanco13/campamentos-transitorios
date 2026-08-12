@@ -1,9 +1,12 @@
 // Punto de entrada único: elige el bootstrap según la ruta ANTES de descargar
-// el bundle pesado de la app completa (mapa, login, dashboard…). /censo y
-// /terreno cargan solo las vistas de campo (~decenas de KB) en lugar del
-// núcleo de ~190 KB gzip.
+// el bundle pesado de la app completa (mapa, login, dashboard…).
+// Cutover §7: /terreno ya no es portal QR; redirige a login.
 
 import { aplicarTemaTerreno, temaTerrenoGuardado } from "./lib/temaTerreno";
+import {
+  olvidarTokenTerreno,
+  haySesionSupabaseLocal,
+} from "./lib/tokenTerreno";
 
 // Tema claro/oscuro guardado (toggle en /terreno). Se aplica aquí, antes de
 // descargar cualquier bundle, para que TODAS las vistas (reporte, censo,
@@ -14,45 +17,45 @@ function rutaEs(base: string): boolean {
   return window.location.pathname === base || window.location.pathname.startsWith(`${base}/`);
 }
 
-// PWA instalada (start_url "/"): un dispositivo de campo —tiene token de
-// terreno recordado y ninguna sesión de operador— aterriza directo en el
-// portal de terreno. Un operador con sesión Supabase entra por la app normal.
-// Se decide aquí, antes de descargar cualquier bundle, para no pagar el
-// núcleo completo solo para redirigir.
-function debeIrATerreno(): boolean {
-  if (window.location.pathname !== "/") return false;
-  try {
-    const tieneTokenTerreno = !!localStorage
-      .getItem("refugio.token_terreno")
-      ?.trim();
-    if (!tieneTokenTerreno) return false;
-    for (let i = 0; i < localStorage.length; i++) {
-      const clave = localStorage.key(i) ?? "";
-      if (clave.startsWith("sb-") && clave.endsWith("-auth-token")) {
-        return false; // Sesión de operador: app normal.
-      }
-    }
-    return true;
-  } catch {
-    // Modo privado: sin persistencia, arranque normal.
-    return false;
-  }
+/** Quita `?t=` de la URL sin recargar (no toca otros params). */
+function quitarParamTDeUrl(): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("t")) return;
+  url.searchParams.delete("t");
+  window.history.replaceState({}, "", url.toString());
 }
 
-if (debeIrATerreno()) {
-  window.location.replace("/terreno");
+if (rutaEs("/terreno")) {
+  // Cutover: cualquier /terreno(?t=…) → limpiar token, cerrar sesión legacy, login.
+  olvidarTokenTerreno();
+  void import("./data/supabaseClient")
+    .then(({ supabase }) => supabase.auth.signOut({ scope: "local" }))
+    .catch(() => undefined)
+    .finally(() => {
+      window.location.replace("/");
+    });
 } else if (rutaEs("/censo")) {
-  // Legacy: planilla pública renombrada a /registro.
-  window.location.replace(
-    `${window.location.pathname.replace(/^\/censo/, "/registro")}${window.location.search}${window.location.hash}`,
-  );
-} else if (rutaEs("/registro") || rutaEs("/terreno") || rutaEs("/denuncia")) {
-  // Mismo splash cinematográfico que el resto de la app (logo + CAMPAMENTOS).
-  // Antes se forzaba `modo-campo` (solo barra verde) y /terreno se veía vacío.
+  // Legacy: planilla pública renombrada a /registro (sin token personal).
+  olvidarTokenTerreno();
+  const url = new URL(window.location.href);
+  url.pathname = url.pathname.replace(/^\/censo/, "/registro");
+  url.searchParams.delete("t");
+  window.location.replace(url.pathname + url.search + url.hash);
+} else if (rutaEs("/registro")) {
+  olvidarTokenTerreno();
+  quitarParamTDeUrl();
+  if (!haySesionSupabaseLocal()) {
+    window.location.replace("/");
+  } else {
+    void import("./censo-entry").then((m) => m.mount());
+  }
+} else if (rutaEs("/denuncia")) {
+  // Denuncias: token publico; no tocar refugio.token_terreno.
   void import("./censo-entry").then((m) => m.mount());
 } else {
   // Arranca el chunk del mapa en paralelo al bootstrap (Vite/dev lo transforma
   // mientras montamos React + auth). No espera el resultado aquí.
+  olvidarTokenTerreno();
   const path = window.location.pathname;
   if (
     path === "/" ||

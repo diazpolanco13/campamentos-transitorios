@@ -8,14 +8,13 @@
 > UI: `/usuarios/terreno` agrupada por campamento (tarjetas colapsables) y
 > `/usuarios` en modo «Mis operadores» para analista/supervisor (crear,
 > editar, eliminar operadores de su alcance).
-> **Fase 2 implementada:** edge `activar-operador` v1 (token QR = prueba de
-> presencia → fija contraseña + `activado_ts`, una sola vez, nunca clave =
-> cédula), gate obligatorio de creación de contraseña en `/terreno`
-> (`GateActivacionTerreno`, con fallback solo si la edge falla), operador
-> activado deja de ser "temporal" (`puedeEditarCuentaPropia` mira
-> `activado_ts`; puede editar perfil y clave, NUNCA renombrar su usuario) y
-> el login normal acepta la cédula pelada (se mapea a `op-<cédula>`).
-> Falta: cutover (§7) — matar acceso por URL cuando el tablero dé verde.
+> **Fase 2 implementada:** edge `activar-operador` (histórico: token QR =
+> prueba de presencia → fija contraseña + `activado_ts`), gate en `/terreno`,
+> operador activado deja de ser "temporal", login acepta cédula pelada.
+> **Cutover §7 HECHO (11-ago-2026):** `login-terreno` y `activar-operador`
+> responden 410; tokens `personal` revocados + constraint; `/terreno?t=`
+> redirige a login; sesiones operador drenadas; denuncias `publico` intactas.
+> Centros sin activados se gestionan a mano (ops).
 > **Predecesor:** `docs/plan-identidad-terreno.md` (Fase A: identidad por cédula
 > vía Nexus). Esto es la continuación: pasar de "sesión de operador por
 > QR + cédula" a "credencial propia provisionada / auto-activada".

@@ -34,7 +34,6 @@ import {
   SeccionIdentificacionCentro,
 } from "./DetalleCentro";
 import { AlertasDelDiaCentro, type VistaFichaCentro } from "./AlertasDelDiaCentro";
-import { AccesoTerrenoCentro } from "./AccesoTerrenoCentro";
 import { ProgresoCensoPoblacion } from "@/features/refugiados/ProgresoCensoPoblacion";
 import { ultimoSnapshotAntes } from "./ParteNumericoResumen";
 
@@ -506,7 +505,6 @@ export function ResumenCentroPanel({
         />
       </div>
 
-      <AccesoTerrenoCentro centro={centro} />
       <ChipAlertaServicios centro={centro} onIrAPestana={onIrAPestana} />
 
       {puedeEliminar && (

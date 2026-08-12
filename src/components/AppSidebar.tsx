@@ -52,7 +52,6 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { centroIdDePathname } from "@/features/centros/seccionesFichaCentro";
-import { irAlPortalTerreno, tokenTerrenoActual } from "@/lib/tokenTerreno";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -147,7 +146,7 @@ function ItemPreferenciasCuenta({
   );
 }
 
-/** Menú reducido del operador del QR: mismas tareas del portal /terreno. */
+/** Menú reducido del operador (login con contraseña). */
 function NavTerreno({ sesion }: Props) {
   const { pathname } = usePathnameNavegacion();
   const centroId =
@@ -157,14 +156,10 @@ function NavTerreno({ sesion }: Props) {
     : "/centros/reportes";
   const enReporte = rutaActiva(pathname, "/centros/reportes");
   const vePreferencias = puedeEditarCuentaPropia(sesion.user);
-  // El portal /terreno solo tiene sentido con el token del QR a mano; el
-  // operador con credencial propia trabaja en las vistas SPA /campo/*.
-  const tokenQr = tokenTerrenoActual();
 
   function irCenso() {
     const params = new URLSearchParams();
     if (centroId) params.set("centro", centroId);
-    if (tokenQr) params.set("t", tokenQr);
     const q = params.toString();
     window.location.assign(q ? `/registro?${q}` : "/registro");
   }
@@ -175,13 +170,6 @@ function NavTerreno({ sesion }: Props) {
         <SidebarGroupLabel>Trabajo en terreno</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {tokenQr && (
-              <ItemMenuPortal
-                icono={Home}
-                label="Inicio"
-                onClick={() => irAlPortalTerreno()}
-              />
-            )}
             <ItemMenu
               to={rutaReporte}
               icono={ClipboardList}
@@ -202,7 +190,7 @@ function NavTerreno({ sesion }: Props) {
             />
             {/* Capacidad no va en el menú: ya vive en la pestaña
                 Infraestructura de la ficha (con su botón de edición); la ruta
-                /campo/capacidad sigue existiendo para el portal y deep links. */}
+                /campo/capacidad sigue existiendo para deep links. */}
             <ItemMenuPortal icono={Users} label="Registro" onClick={irCenso} />
           </SidebarMenu>
         </SidebarGroupContent>
@@ -506,23 +494,24 @@ export function AppSidebar({ sesion }: Props) {
           <SidebarMenuItem>
             {esTerreno ? (
               <SidebarMenuButton
-                type="button"
+                asChild
                 size="lg"
-                tooltip="Volver al inicio"
-                className="cursor-pointer group-data-[collapsible=icon]:justify-center"
-                onClick={() => irAlPortalTerreno()}
+                tooltip="Reportes"
+                className="group-data-[collapsible=icon]:justify-center"
               >
-                <span className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-inset ring-primary/30">
-                  <Home className="size-4" />
-                </span>
-                <span className="flex min-w-0 flex-col leading-none group-data-[collapsible=icon]:hidden">
-                  <span className="truncate text-sm font-semibold">
-                    Reportes en el terreno
+                <Link to="/centros/reportes" onClick={() => marcarNavegacion("/centros/reportes")}>
+                  <span className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-inset ring-primary/30">
+                    <Home className="size-4" />
                   </span>
-                  <span className="truncate text-xs text-sidebar-foreground/70">
-                    Volver al inicio
+                  <span className="flex min-w-0 flex-col leading-none group-data-[collapsible=icon]:hidden">
+                    <span className="truncate text-sm font-semibold">
+                      Reportes en el terreno
+                    </span>
+                    <span className="truncate text-xs text-sidebar-foreground/70">
+                      Inicio
+                    </span>
                   </span>
-                </span>
+                </Link>
               </SidebarMenuButton>
             ) : (
               <SidebarMenuButton
