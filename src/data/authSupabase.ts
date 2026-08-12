@@ -389,9 +389,9 @@ export async function login(
   password: string,
   capToken?: string,
 ): Promise<Sesion> {
-  // Con Cap: el Edge `login-with-cap` resuelve cédula / `op-<cédula>` contra
-  // `perfiles` (token Cap es single-use; no reintentar aquí).
-  // Sin Cap (dev): mismo orden — primero `op-<cédula>`, luego cédula pelada.
+  // Con Cap: el Edge `login-with-cap` resuelve cédula → cuenta sala si
+  // existe (`username` = cédula), si no `op-<cédula>` (token Cap single-use).
+  // Sin Cap (dev): mismo orden — sala primero, luego terreno.
   const limpio = username.trim();
   const esCedula = /^\d{5,12}$/.test(limpio);
 
@@ -402,7 +402,7 @@ export async function login(
     return loginConCap(limpio, password, capToken.trim());
   }
 
-  const candidatos = esCedula ? [`op-${limpio}`, limpio] : [limpio];
+  const candidatos = esCedula ? [limpio, `op-${limpio}`] : [limpio];
   let lastError: string | null = null;
   for (const u of candidatos) {
     const email = `${u}@refugio.app`;

@@ -31,33 +31,39 @@ function json(body: unknown, status: number): Response {
 
 /**
  * Si el login llega como cédula pelada o `op-<cédula>`, elige el username
- * real en `perfiles`:
- *   1. username `op-<cédula>` (canónico terreno)
- *   2. username = cédula (altas admin legacy)
- *   3. perfil con `cedula_norm` = cédula (supervisor/admin cuyo login es nombre)
+ * real en `perfiles` (login de sala / Cap; terreno usa login-terreno):
+ *   1. Prefijo `op-…` explícito → cuenta terreno
+ *   2. Cédula pelada → username = cédula (sala: supervisor/admin) si existe
+ *   3. Si no, `op-<cédula>` (terreno)
+ *   4. Perfil con `cedula_norm` = cédula (login por nombre)
  * Sin match → `op-<cédula>` (fallback terreno).
+ *
+ * Importante: si existen AMBAS cuentas (`12298084` supervisor y
+ * `op-12298084` operador), la cédula pelada debe abrir la de sala —
+ * la contraseña que cambia Gestión de usuarios es esa.
  */
 async function resolverUsernameLogin(
   admin: SupabaseClient,
   raw: string,
 ): Promise<string> {
   const limpio = raw.trim();
-  const cedula =
-    /^op-(\d{5,12})$/i.test(limpio)
-      ? limpio.slice(3)
-      : /^\d{5,12}$/.test(limpio)
-        ? limpio
-        : null;
+
+  // Terreno explícito: no redirigir a la cuenta sala homónima.
+  if (/^op-(\d{5,12})$/i.test(limpio)) {
+    return `op-${limpio.slice(3)}`;
+  }
+
+  const cedula = /^\d{5,12}$/.test(limpio) ? limpio : null;
   if (!cedula) return limpio;
 
-  const candidatos = [`op-${cedula}`, cedula];
+  const candidatos = [cedula, `op-${cedula}`];
   const { data: filas } = await admin
     .from("perfiles")
     .select("username")
     .in("username", candidatos);
   const found = new Set((filas ?? []).map((f) => f.username));
-  if (found.has(`op-${cedula}`)) return `op-${cedula}`;
   if (found.has(cedula)) return cedula;
+  if (found.has(`op-${cedula}`)) return `op-${cedula}`;
 
   const { data: porCedula } = await admin
     .from("perfiles")
