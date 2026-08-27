@@ -1,0 +1,9 @@
+[Unit]
+Description=Vigilante de servicios (Nexus + plataforma) — Telegram y /estado
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vigilante-nexus/vigilante-ciclo.sh
+Nice=10

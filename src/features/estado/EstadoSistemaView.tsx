@@ -2,7 +2,7 @@
 // externos de la institución, con histórico de incidentes (cuándo, por qué y
 // cuántos minutos). Acceso: admin, analista_sae y autoridad (la RLS de
 // `incidentes_servicios` devuelve vacío al resto). Se actualiza en vivo
-// (Realtime) — cuando Nexus cae, la sala lo ve antes de que lleguen las quejas.
+// (Realtime) — cuando un servicio cae, la sala lo ve antes de que lleguen las quejas.
 
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
@@ -13,6 +13,8 @@ import {
   Database,
   Globe,
   MonitorSmartphone,
+  Server,
+  ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
 import type { Sesion } from "@/data/authSupabase";
@@ -23,11 +25,14 @@ import {
   formatoDuracion,
   formatoFechaHora,
   formatoHora,
+  CATALOGO_SERVICIOS,
   infoServicio,
   parteTelegramIncidente,
   resumenVentanaServicio,
   segmentosContinuidad,
   type IncidenteServicio,
+  type InfoServicio,
+  type ResumenVentanaServicio,
   type SegmentoContinuidad,
 } from "@/domain/estadoServicios";
 import { puedeVerEstadoSistema } from "@/domain/permisos";
@@ -96,6 +101,51 @@ function BarraContinuidad({ segmentos }: { segmentos: SegmentoContinuidad[] }) {
         <span>Hace 24 h</span>
         <span>Ahora</span>
       </div>
+    </div>
+  );
+}
+
+function iconoServicio(id: string) {
+  switch (id) {
+    case "pwa":
+      return MonitorSmartphone;
+    case "supabase":
+      return Database;
+    case "cap":
+      return ShieldCheck;
+    case "gateway":
+      return Server;
+    default:
+      return Globe;
+  }
+}
+
+function ExtraDisponibilidad({
+  resumen,
+}: {
+  resumen: ResumenVentanaServicio;
+}) {
+  return (
+    <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 border-t border-border pt-2 text-xs text-muted-foreground">
+      <span>
+        Disponibilidad {DIAS_RESUMEN} días:{" "}
+        <span className="font-medium text-foreground">
+          {resumen.uptimePct.toLocaleString("es", {
+            maximumFractionDigits: 2,
+          })}
+          %
+        </span>
+      </span>
+      <span>
+        Incidentes:{" "}
+        <span className="font-medium text-foreground">{resumen.incidentes}</span>
+      </span>
+      <span>
+        Tiempo caído:{" "}
+        <span className="font-medium text-foreground">
+          {resumen.caidoMs > 0 ? formatoDuracion(resumen.caidoMs) : "0 min"}
+        </span>
+      </span>
     </div>
   );
 }
@@ -230,19 +280,16 @@ export function EstadoSistemaView({ sesion }: Props) {
     return () => window.clearInterval(id);
   }, []);
 
-  const nexusAbierto = useMemo(
-    () =>
-      incidentes.find((i) => i.servicio === "nexus" && i.estado === "abierto") ??
-      null,
-    [incidentes],
-  );
-  const resumenNexus = useMemo(
-    () => resumenVentanaServicio(incidentes, "nexus", DIAS_RESUMEN, ahora),
-    [incidentes, ahora],
-  );
-  // Una barra por servicio; pwa/supabase aún sin monitor de incidentes
-  // (Fase 2 con Uptime Kuma) — con la tabla vacía salen verdes, y el cableado
-  // ya queda listo para cuando lleguen incidentes tipo "plataforma".
+  const abiertosPorServicio = useMemo(() => {
+    const mapa = new Map<string, IncidenteServicio>();
+    for (const inc of incidentes) {
+      if (inc.estado === "abierto" && !mapa.has(inc.servicio)) {
+        mapa.set(inc.servicio, inc);
+      }
+    }
+    return mapa;
+  }, [incidentes]);
+
   const barraDe = useMemo(() => {
     const cache = new Map<string, ReturnType<typeof segmentosContinuidad>>();
     return (servicio: string) => {
@@ -261,6 +308,47 @@ export function EstadoSistemaView({ sesion }: Props) {
     };
   }, [incidentes, ahora]);
 
+  function textoEstado(
+    info: InfoServicio,
+    abierto: IncidenteServicio | undefined,
+  ): string {
+    if (abierto) {
+      return `Caído desde ${formatoFechaHora(abierto.inicio_ts)} (${formatoDuracion(
+        duracionIncidenteMs(abierto, ahora),
+      )}). ${abierto.causa ?? ""}`;
+    }
+    if (info.id === "supabase" && !conectado) {
+      return "Reconectando… (sin conexión en vivo en este dispositivo)";
+    }
+    return "Operativo — el vigilante lo verifica cada 3 minutos por HTTPS.";
+  }
+
+  function tarjetaDe(info: InfoServicio) {
+    const abierto = abiertosPorServicio.get(info.id);
+    const ok = info.id === "supabase" ? !abierto && conectado : !abierto;
+    return (
+      <TarjetaServicio
+        key={info.id}
+        icono={iconoServicio(info.id)}
+        nombre={info.nombre}
+        descripcion={info.descripcion}
+        ok={ok}
+        estadoTexto={textoEstado(info, abierto)}
+        segmentos={barraDe(info.id)}
+        extra={
+          <ExtraDisponibilidad
+            resumen={resumenVentanaServicio(
+              incidentes,
+              info.id,
+              DIAS_RESUMEN,
+              ahora,
+            )}
+          />
+        }
+      />
+    );
+  }
+
   if (!puedeVer) return <Navigate to="/" replace />;
 
   return (
@@ -276,26 +364,9 @@ export function EstadoSistemaView({ sesion }: Props) {
             Nuestra plataforma
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <TarjetaServicio
-              icono={MonitorSmartphone}
-              nombre="Aplicación (PWA)"
-              descripcion="La interfaz de campamentos, registro y reportes servida desde el VPS propio."
-              ok
-              estadoTexto="Operativa — la está usando en este momento."
-              segmentos={barraDe("pwa")}
-            />
-            <TarjetaServicio
-              icono={Database}
-              nombre="Base de datos y tiempo real"
-              descripcion="Postgres, autenticación y sincronización en vivo (Supabase)."
-              ok={conectado}
-              estadoTexto={
-                conectado
-                  ? "Operativa — conexión en vivo activa desde este dispositivo."
-                  : "Reconectando… (sin conexión en vivo en este dispositivo)"
-              }
-              segmentos={barraDe("supabase")}
-            />
+            {CATALOGO_SERVICIOS.filter((s) => s.tipo === "plataforma").map(
+              tarjetaDe,
+            )}
           </div>
         </section>
 
@@ -303,47 +374,7 @@ export function EstadoSistemaView({ sesion }: Props) {
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Servicios externos (institución)
           </h2>
-          <TarjetaServicio
-            icono={Globe}
-            nombre={infoServicio("nexus").nombre}
-            descripcion={infoServicio("nexus").descripcion}
-            ok={!nexusAbierto}
-            estadoTexto={
-              nexusAbierto
-                ? `Caído desde ${formatoFechaHora(nexusAbierto.inicio_ts)} (${formatoDuracion(
-                    duracionIncidenteMs(nexusAbierto, ahora),
-                  )}). ${nexusAbierto.causa ?? ""}`
-                : "Operativo — el vigilante lo verifica cada 3 minutos."
-            }
-            segmentos={barraDe("nexus")}
-            extra={
-              <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 border-t border-border pt-2 text-xs text-muted-foreground">
-                <span>
-                  Disponibilidad {DIAS_RESUMEN} días:{" "}
-                  <span className="font-medium text-foreground">
-                    {resumenNexus.uptimePct.toLocaleString("es", {
-                      maximumFractionDigits: 2,
-                    })}
-                    %
-                  </span>
-                </span>
-                <span>
-                  Incidentes:{" "}
-                  <span className="font-medium text-foreground">
-                    {resumenNexus.incidentes}
-                  </span>
-                </span>
-                <span>
-                  Tiempo caído:{" "}
-                  <span className="font-medium text-foreground">
-                    {resumenNexus.caidoMs > 0
-                      ? formatoDuracion(resumenNexus.caidoMs)
-                      : "0 min"}
-                  </span>
-                </span>
-              </div>
-            }
-          />
+          {CATALOGO_SERVICIOS.filter((s) => s.tipo === "externo").map(tarjetaDe)}
         </section>
 
         <section className="space-y-2">
@@ -372,9 +403,11 @@ export function EstadoSistemaView({ sesion }: Props) {
             </ul>
           )}
           <p className="text-xs leading-snug text-muted-foreground">
-            Los incidentes los abre y cierra automáticamente el vigilante del
-            servidor (verificación cada 3 minutos). "Copiar parte" genera el
-            descargo en formato Telegram para reenviar al grupo de enlaces.
+            El vigilante del VPS (systemd, no Dokploy) sondea cada 3 minutos el
+            HTTPS público de PWA, Supabase, Cap, gateway/fotos y el API
+            institucional Nexus. Avisa por Telegram y escribe aquí en cada
+            transición. "Copiar parte" genera el descargo para el grupo de
+            enlaces.
           </p>
         </section>
       </div>

@@ -36,6 +36,34 @@ export interface InfoServicio {
 
 export const CATALOGO_SERVICIOS: InfoServicio[] = [
   {
+    id: "pwa",
+    nombre: "Aplicación (PWA)",
+    descripcion:
+      "Interfaz de campamentos, registro y reportes. El vigilante pega el HTTPS público (lo que ve el usuario), no el contenedor interno.",
+    tipo: "plataforma",
+  },
+  {
+    id: "supabase",
+    nombre: "Base de datos y tiempo real",
+    descripcion:
+      "Postgres, autenticación y sincronización en vivo (Supabase). Caída aquí tumba login, censo y reportes.",
+    tipo: "plataforma",
+  },
+  {
+    id: "cap",
+    nombre: "CAPTCHA de acceso (Cap)",
+    descripcion:
+      "Reto anti-bot del login. Instancia propia en el VPS. Si cae, nadie entra.",
+    tipo: "plataforma",
+  },
+  {
+    id: "gateway",
+    nombre: "Gateway Nexus / fotos",
+    descripcion:
+      "Proxy propio (VPN + MinIO de fotos SAIME). Distinto del API institucional: esto es nuestro contenedor.",
+    tipo: "plataforma",
+  },
+  {
     id: "nexus",
     nombre: "API institucional NEXUS/SAIME",
     descripcion:
@@ -43,6 +71,10 @@ export const CATALOGO_SERVICIOS: InfoServicio[] = [
     tipo: "externo",
   },
 ];
+
+export const SERVICIOS_PLATAFORMA: readonly string[] = CATALOGO_SERVICIOS.filter(
+  (s) => s.tipo === "plataforma",
+).map((s) => s.id);
 
 export function infoServicio(id: string): InfoServicio {
   return (

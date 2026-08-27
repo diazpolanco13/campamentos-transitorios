@@ -214,10 +214,13 @@ datos viven en Postgres.
   header `X-Vigilante-Secret` contra `app_secrets.vigilante_incidentes_secret`;
   referencia `supabase/functions/registrar-incidente/`). El **vigilante del
   VPS** (`/opt/vigilante-nexus/vigilante-nexus.sh` +
-  `config-incidentes.env`, fuera del repo) abre/cierra el incidente de Nexus
-  en cada transición (causas distintas: degraded / offline / gateway sin
-  respuesta) y registra `incidente_abierto`/`incidente_resuelto` en
-  `historial`. Vista **`/estado`** (`features/estado/EstadoSistemaView`,
+  `config-incidentes.env`, fuera del repo) abre/cierra incidentes en cada
+  transición. **Nexus** (`vigilante-nexus.sh`): API institucional
+  (degraded / offline / gateway sin respuesta). **Plataforma**
+  (`vigilante-plataforma.sh`): PWA HTTPS público, Supabase Auth, Cap y
+  gateway/fotos — tipo `plataforma`. El timer corre `vigilante-ciclo.sh`.
+  No vive en Dokploy: si Swarm/Dokploy mueren, systemd sigue sondeando y
+  Telegram avisa. Vista **`/estado`** (`features/estado/EstadoSistemaView`,
   permiso `puedeVerEstadoSistema` = admin/analista/autoridad): grupos
   "Nuestra plataforma" vs "Servicios externos (institución)", uptime 30 días,
   historial 90 días con duración en minutos y botón "Copiar parte" (formato
@@ -226,9 +229,7 @@ datos viven en Postgres.
   PII — ⚠️ mismo gotcha de EXECUTE si se recrea): `AvisoIncidenteNexus` en
   `/terreno` y detalle "falla registrada desde las HH:MM" en `EstadoNexusApi`
   (`/censo`) — corta el bombardeo de reportes cuando cae el API institucional.
-  SQL de referencia: `supabase/incidentes_servicios.sql`. Fase 2 opcional
-  pendiente: Uptime Kuma en Dokploy monitoreando PWA/Supabase/bot/Cap y
-  notificando por webhook a la misma Edge Function (tipo `plataforma`).
+  SQL de referencia: `supabase/incidentes_servicios.sql`.
 - ✅ **IA local disponible (16-jul):** Hermes Agent gateway en Dokploy
   (proyecto independiente `hermes-agent`) consumiendo Gemma 4 12B en una DGX
   Spark vía Tailscale. API OpenAI-compatible en `127.0.0.1:8642` (solo VPS).

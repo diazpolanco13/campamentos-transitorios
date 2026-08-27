@@ -1,0 +1,12 @@
+[Unit]
+Description=Timer: comprobar PWA, Supabase, Cap, gateway y Nexus cada 3 minutos
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=3min
+AccuracySec=30s
+Persistent=true
+Unit=vigilante-nexus.service
+
+[Install]
+WantedBy=timers.target
